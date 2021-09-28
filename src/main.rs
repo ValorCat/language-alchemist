@@ -1,8 +1,8 @@
 use std::fmt::{self, Debug, Display};
 use eframe::epi;
-use egui::{self, CtxRef, Grid, Key, Label, Sense, TextEdit, Ui};
+use egui::{self, CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
-use crate::lexicon::{Lexicon, LexiconEditWindow};
+use crate::lexicon::*;
 
 mod lexicon;
 
@@ -14,7 +14,7 @@ fn main() {
 
 /// A constructed language.
 #[derive(Default)]
-struct Language {
+pub struct Language {
     // translate tab
     name: String,
     input_text: String,
@@ -62,16 +62,6 @@ impl Default for Tab {
 impl Display for Tab {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Debug::fmt(self, f)
-    }
-}
-
-/// The toggleable mode for the lexicon search field.
-#[derive(PartialEq)]
-enum LexiconSearchMode { Native, Conlang }
-
-impl Default for LexiconSearchMode {
-    fn default() -> Self {
-        LexiconSearchMode::Native
     }
 }
 
@@ -192,70 +182,3 @@ fn draw_translate_tab(ui: &mut Ui, ctx: &CtxRef, curr_lang: &mut Language, editi
     ui.add_space(10.0);
     ui.add(TextEdit::multiline(output_text).enabled(false));
 }
-
-/// Render contents of the 'lexicon' tab.
-fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win: &mut Option<LexiconEditWindow>) {
-    // add +10 pts vertical spacing between rows in this tab
-    ui.spacing_mut().item_spacing += (0.0, 10.0).into();
-
-    let label = format!("Allow homonyms ({} currently)", curr_lang.num_homonyms);
-    let tooltip = "Homonyms are words with the same spelling or pronunciation, but different meanings. Natural languages often have many homonyms, but constructed languages rarely do to avoid confusion.";
-    ui.checkbox(&mut curr_lang.allow_homonyms, label).on_hover_text(tooltip);
-    
-    ui.separator();
-
-    // table search controls
-    ui.horizontal(|ui| {
-        ui.add(TextEdit::singleline(&mut curr_lang.lexicon_search)
-            .hint_text("Search...")
-            .desired_width(120.0));
-        ui.label("Search by:");
-        ui.selectable_value(&mut curr_lang.lexicon_search_mode, LexiconSearchMode::Native, "English");
-        ui.selectable_value(&mut curr_lang.lexicon_search_mode, LexiconSearchMode::Conlang, &curr_lang.name);
-    });
-
-    // draw the lexicon table
-    ui.group(|ui| {
-        // remove the extra 10 pts of spacing within the table
-        ui.spacing_mut().item_spacing += (0.0, -10.0).into();
-        
-        // draw the table header
-        Grid::new("lexicon table header")
-            .min_col_width(100.0)
-            .show(ui, |ui| {
-                ui.heading(&curr_lang.name);
-                ui.heading("English");
-                ui.end_row();
-        });
-
-        ui.separator();
-
-        // draw the table body
-        Grid::new("lexicon table")
-            .striped(true)
-            .min_col_width(100.0)
-            .show(ui, |ui| {
-                for (native, conlang) in curr_lang.lexicon.iter() {
-                    let conlang_lbl = ui.add(Label::new(conlang).sense(Sense::click()));
-                    let native_lbl = ui.add(Label::new(native).sense(Sense::click()));
-                    if conlang_lbl.clicked() || native_lbl.clicked() {
-                        *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
-                    }
-                    ui.end_row();
-                }
-        });
-    });
-
-    ui.separator();
-    if ui.button("New Lexicon Entry").clicked() {
-        *lexicon_edit_win = Some(LexiconEditWindow::new_entry());
-    }
-
-    // draw lexicon edit popup
-    if let Some(edit_win) = lexicon_edit_win {
-        let request_close = edit_win.show(ui, &mut curr_lang.name, &mut curr_lang.lexicon);
-        if request_close {
-            *lexicon_edit_win = None;
-        }
-    }
- }
