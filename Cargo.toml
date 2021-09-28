@@ -7,4 +7,5 @@ edition = "2018"
 
 [dependencies]
 eframe = "0.14.0" # Includes egui, epi and web+native backends
+egui = "0.14.2"
 serde = { version = "1", features = ["derive"], optional = true }

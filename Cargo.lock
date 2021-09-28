@@ -440,9 +440,9 @@ dependencies = [
 
 [[package]]
 name = "egui"
-version = "0.14.0"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56df2f3c802727b65eddaf927abf8084e60128ec7c94432834f1eac98f1e74cd"
+checksum = "b403f29d592b5c2267279bfdf2cd3fe3ba0e7a8738d03203a6f1536e8e9d26bd"
 dependencies = [
  "epaint",
 ]
@@ -680,6 +680,7 @@ name = "language-alchemist"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "egui",
  "serde",
 ]
 

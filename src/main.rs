@@ -1,6 +1,10 @@
 use std::fmt::{self, Debug, Display};
-use eframe::egui::{self, CtxRef, Grid, Key, TextEdit, Ui, containers::ScrollArea};
 use eframe::epi;
+use egui::{self, CtxRef, Grid, Key, Label, Sense, TextEdit, Ui};
+use egui::containers::ScrollArea;
+use crate::lexicon::{Lexicon, LexiconEditWindow};
+
+mod lexicon;
 
 fn main() {
     let app = Application::default();
@@ -20,7 +24,8 @@ struct Language {
     allow_homonyms: bool,
     num_homonyms: u32,
     lexicon_search: String,
-    lexicon_search_mode: LexiconSearchMode
+    lexicon_search_mode: LexiconSearchMode,
+    lexicon: Lexicon
 }
 
 impl Language {
@@ -39,7 +44,8 @@ struct Application {
     languages: Vec<Language>,
     curr_lang_idx: Option<usize>,
     curr_tab: Tab,
-    editing_name: bool
+    editing_name: bool,
+    lexicon_edit_win: Option<LexiconEditWindow>
 }
 
 /// One of the four UI tabs at the top of the window.
@@ -83,7 +89,7 @@ impl epi::App for Application {
     /// * `ctx` - The application context, which manages I/O.
     /// * `_frame` - The window and its surrounding context.
     fn update(&mut self, ctx: &CtxRef, _frame: &mut epi::Frame<'_>) {
-        let Self {languages, curr_lang_idx, curr_tab, editing_name} = self;
+        let Self {languages, curr_lang_idx, curr_tab, editing_name, lexicon_edit_win} = self;
 
         // draw left panel
         egui::SidePanel::left("language list").default_width(120.0).show(ctx, |ui| {
@@ -113,7 +119,7 @@ impl epi::App for Application {
             ui.vertical_centered(|ui| {
                 if ui.button("New Language").clicked() {
                     languages.push(Language::new());
-                    curr_lang_idx.insert(languages.len() - 1);
+                    *curr_lang_idx = Some(languages.len() - 1);
                     *curr_tab = Tab::Translate;
                 }
             });
@@ -139,7 +145,7 @@ impl epi::App for Application {
                 // draw contents of active tab
                 match curr_tab {
                     Tab::Translate => draw_translate_tab(ui, ctx, curr_lang, editing_name),
-                    Tab::Lexicon => draw_lexicon_tab(ui, curr_lang),
+                    Tab::Lexicon => draw_lexicon_tab(ui, curr_lang, lexicon_edit_win),
                     Tab::Script => {},
                     Tab::Grammar => {},
                 }
@@ -188,7 +194,7 @@ fn draw_translate_tab(ui: &mut Ui, ctx: &CtxRef, curr_lang: &mut Language, editi
 }
 
 /// Render contents of the 'lexicon' tab.
-fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language) {
+fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win: &mut Option<LexiconEditWindow>) {
     // add +10 pts vertical spacing between rows in this tab
     ui.spacing_mut().item_spacing += (0.0, 10.0).into();
 
@@ -217,8 +223,8 @@ fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language) {
         Grid::new("lexicon table header")
             .min_col_width(100.0)
             .show(ui, |ui| {
-                ui.heading("English");
                 ui.heading(&curr_lang.name);
+                ui.heading("English");
                 ui.end_row();
         });
 
@@ -229,22 +235,27 @@ fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language) {
             .striped(true)
             .min_col_width(100.0)
             .show(ui, |ui| {
-                ui.label("dog");
-                ui.label("el perro");
-                ui.end_row();
-
-                ui.label("vegetable");
-                ui.label("la verdura");
-                ui.end_row();
-
-                ui.label("bat");
-                ui.vertical(|ui| {
-                    ui.label("1. el murciélago");
-                    ui.label("2. el bate");
-                });
+                for (native, conlang) in curr_lang.lexicon.iter() {
+                    let conlang_lbl = ui.add(Label::new(conlang).sense(Sense::click()));
+                    let native_lbl = ui.add(Label::new(native).sense(Sense::click()));
+                    if conlang_lbl.clicked() || native_lbl.clicked() {
+                        *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
+                    }
+                    ui.end_row();
+                }
         });
     });
 
     ui.separator();
-    let _ = ui.button("New Lexicon Entry");
-}
+    if ui.button("New Lexicon Entry").clicked() {
+        *lexicon_edit_win = Some(LexiconEditWindow::new_entry());
+    }
+
+    // draw lexicon edit popup
+    if let Some(edit_win) = lexicon_edit_win {
+        let request_close = edit_win.show(ui, &mut curr_lang.name, &mut curr_lang.lexicon);
+        if request_close {
+            *lexicon_edit_win = None;
+        }
+    }
+ }
