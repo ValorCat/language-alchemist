@@ -1,11 +1,11 @@
 [package]
 name = "language-alchemist"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = "0.14.0" # Includes egui, epi and web+native backends
-egui = "0.14.2"
+eframe = "0.15.0" # Includes egui, epi and web+native backends
+egui = "0.15.0"
 serde = { version = "1", features = ["derive"], optional = true }

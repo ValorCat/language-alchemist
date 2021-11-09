@@ -90,7 +90,7 @@ impl epi::App for Application {
             ui.separator();
 
             // draw language list
-            ScrollArea::auto_sized().show(ui, |ui| {
+            ScrollArea::vertical().show(ui, |ui| {
                 if let Some(curr_lang_idx) = curr_lang_idx {
                     for (idx, lang) in languages.iter().enumerate() {
                         ui.selectable_value(curr_lang_idx, idx, &lang.name);
@@ -180,5 +180,5 @@ fn draw_translate_tab(ui: &mut Ui, ctx: &CtxRef, curr_lang: &mut Language, editi
     }
 
     ui.add_space(10.0);
-    ui.add(TextEdit::multiline(output_text).enabled(false));
+    ui.add_enabled(false, TextEdit::multiline(output_text));
 }

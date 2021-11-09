@@ -191,8 +191,8 @@ fn draw_delete_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &Stri
 
 /// Draw a button that updates the active lexicon entry.
 fn draw_apply_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &String, native_phrase: &String, conlang_phrase: &String, can_edit: bool) -> bool {
-    let button = Button::new("Apply Changes").enabled(can_edit);
-    let clicked = ui.add(button).clicked();
+    let button = Button::new("Apply Changes");
+    let clicked = ui.add_enabled(can_edit, button).clicked();
     if clicked {
         lexicon.insert(native_phrase.clone(), conlang_phrase.clone());
         if orig_native_phrase != native_phrase {
@@ -204,8 +204,8 @@ fn draw_apply_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &Strin
 
 /// Draw a button that adds the active entry to the lexicon.
 fn draw_new_btn(ui: &mut Ui, lexicon: &mut Lexicon, native_phrase: &String, conlang_phrase: &String, can_edit: bool) -> bool {
-    let button = Button::new("Add Entry").enabled(can_edit);
-    let clicked = ui.add(button).clicked();
+    let button = Button::new("Add Entry");
+    let clicked = ui.add_enabled(can_edit, button).clicked();
     if clicked {
         lexicon.insert(native_phrase.clone(), conlang_phrase.clone());
     }
