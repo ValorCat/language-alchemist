@@ -3,8 +3,10 @@ use eframe::epi;
 use egui::{self, CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
 use crate::lexicon::*;
+use crate::synthesis::*;
 
 mod lexicon;
+mod synthesis;
 
 fn main() {
     let app = Application::default();
@@ -25,7 +27,11 @@ pub struct Language {
     num_homonyms: u32,
     lexicon_search: String,
     lexicon_search_mode: LexiconSearchMode,
-    lexicon: Lexicon
+    lexicon: Lexicon,
+
+    // synthesis tab
+    graphemes: Vec<Grapheme>,
+    new_grapheme: String
 }
 
 impl Language {
@@ -50,7 +56,7 @@ struct Application {
 
 /// One of the four UI tabs at the top of the window.
 #[derive(Clone, Debug, PartialEq)]
-enum Tab { Translate, Lexicon, Script, Grammar }
+enum Tab { Translate, Lexicon, Synthesis, Grammar }
 
 impl Default for Tab {
     fn default() -> Self {
@@ -123,7 +129,7 @@ impl epi::App for Application {
 
                 // draw top tabs
                 ui.horizontal(|ui| {
-                    for tab in [Tab::Translate, Tab::Lexicon, Tab::Script, Tab::Grammar] {
+                    for tab in [Tab::Translate, Tab::Lexicon, Tab::Synthesis, Tab::Grammar] {
                         ui.selectable_value(curr_tab, tab.clone(), tab.to_string());
                         ui.separator();
                     }
@@ -136,12 +142,12 @@ impl epi::App for Application {
                 match curr_tab {
                     Tab::Translate => draw_translate_tab(ui, ctx, curr_lang, editing_name),
                     Tab::Lexicon => draw_lexicon_tab(ui, curr_lang, lexicon_edit_win),
-                    Tab::Script => {},
+                    Tab::Synthesis => draw_synthesis_tab(ui, curr_lang),
                     Tab::Grammar => {},
                 }
             } else {
                 ui.add_space(10.0);
-                ui.label("Select or create a language on the left.");
+                ui.label("Select a language on the left, or create a new one.");
                 egui::warn_if_debug_build(ui);
             }
         });
