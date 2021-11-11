@@ -31,7 +31,9 @@ pub struct Language {
 
     // synthesis tab
     graphemes: Vec<Grapheme>,
-    new_grapheme: String
+    new_grapheme: String,
+    max_syllables: (u8, u8),          // (function words, content words)
+    syllable_wgts: (Vec<u8>, Vec<u8>) // (function words, content words)
 }
 
 impl Language {
