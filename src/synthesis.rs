@@ -1,4 +1,4 @@
-use egui::{DragValue, Grid, Id, TextEdit, Ui};
+use egui::{Color32, DragValue, Grid, Id, TextEdit, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use crate::Language;
 
@@ -47,6 +47,12 @@ fn draw_graphemic_inventory(ui: &mut Ui, curr_lang: &mut Language) {
             }
         });
     });
+
+    // show error if empty
+    if curr_lang.graphemes.is_empty() {
+        ui.add_space(5.0);
+        ui.colored_label(Color32::RED, "The graphemic inventory must contain at least one grapheme");
+    }
 }
 
 fn draw_syllable_counter(ui: &mut Ui, curr_lang: &mut Language) {
@@ -103,12 +109,26 @@ fn draw_syllable_counter(ui: &mut Ui, curr_lang: &mut Language) {
             }
         });
     });
+    
+    // check each column sums to 100
+    let func_total: u16 = curr_lang.syllable_wgts.0.iter().sum();
+    let content_total: u16 = curr_lang.syllable_wgts.1.iter().sum();
+    if func_total != 100 || content_total != 100 {
+        ui.add_space(5.0);
+        ui.colored_label(Color32::RED, "Each column should add up to 100%:");
+        if func_total != 100 {
+            ui.colored_label(Color32::RED, format!("  * The column \"Function Words\" adds up to {}%", func_total));
+        }
+        if content_total != 100 {
+            ui.colored_label(Color32::RED, format!("  * The column \"Content Words\" adds up to {}%", content_total));
+        }
+    }
 }
 
 fn int_field_1_to_100(value: &mut u8) -> DragValue {
     DragValue::new(value).clamp_range(1..=100).speed(0.05)
 }
 
-fn int_field_percent(value: &mut u8) -> DragValue {
+fn int_field_percent(value: &mut u16) -> DragValue {
     DragValue::new(value).clamp_range(0..=100).suffix("%")
 }
