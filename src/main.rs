@@ -2,9 +2,11 @@ use std::fmt::{self, Debug, Display};
 use eframe::{egui, epi};
 use egui::{CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
+use crate::grapheme::Grapheme;
 use crate::lexicon::*;
 use crate::synthesis::*;
 
+mod grapheme;
 mod lexicon;
 mod synthesis;
 

@@ -1,8 +1,7 @@
-use eframe::egui::{Color32, DragValue, Grid, Id, TextEdit, Ui};
+use eframe::egui::{Color32, DragValue, Grid, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use crate::Language;
-
-pub struct Grapheme(String);
+use crate::grapheme::*;
 
 /// Render contents of the 'synthesis' tab.
 pub fn draw_synthesis_tab(ui: &mut Ui, curr_lang: &mut Language) {
@@ -16,37 +15,7 @@ fn draw_graphemic_inventory(ui: &mut Ui, curr_lang: &mut Language) {
     ui.label("The graphemic inventory is the set of recognized graphemes (unique letters or glyphs) in the \
         language. It can also contain multigraphs, like the English <ch> and <sh>.");
     ui.add_space(5.0);
-    ui.group(|ui| {
-        ui.horizontal_wrapped(|ui| {
-            // add extra space between graphemes
-            ui.spacing_mut().item_spacing.x += 3.0;
-
-            // draw graphemes, and remove them if clicked
-            curr_lang.graphemes.retain(|grapheme| {
-                !ui.button(&grapheme.0).on_hover_text("Click to remove").clicked()
-            });
-
-            // draw new grapheme text field at end
-            let new_grapheme = ui.add(TextEdit::singleline(&mut curr_lang.new_grapheme)
-                .frame(false)
-                .hint_text("Add a grapheme...")
-                .id(Id::new("new grapheme")));
-        
-            // add grapheme on space, enter, or focus loss
-            if new_grapheme.changed() {
-                while let Some(space_pos) = curr_lang.new_grapheme.find(char::is_whitespace) {
-                    if space_pos > 0 {
-                        curr_lang.graphemes.push(Grapheme(curr_lang.new_grapheme[..space_pos].to_owned()));
-                    }
-                    curr_lang.new_grapheme.replace_range(..=space_pos, "");
-                }
-            }
-            if new_grapheme.lost_focus() && !curr_lang.new_grapheme.is_empty() {
-                curr_lang.graphemes.push(Grapheme(curr_lang.new_grapheme.clone()));
-                curr_lang.new_grapheme.clear();
-            }
-        });
-    });
+    ui.add(GraphemeInputField::new(&mut curr_lang.graphemes, &mut curr_lang.new_grapheme, "new grapheme"));
 
     // show error if empty
     if curr_lang.graphemes.is_empty() {
