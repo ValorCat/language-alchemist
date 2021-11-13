@@ -1,4 +1,4 @@
-use egui::{Color32, DragValue, Grid, Id, TextEdit, Ui};
+use eframe::egui::{Color32, DragValue, Grid, Id, TextEdit, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use crate::Language;
 

@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug, Display};
-use eframe::epi;
-use egui::{self, CtxRef, Key, TextEdit, Ui};
+use eframe::{egui, epi};
+use egui::{CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
 use crate::lexicon::*;
 use crate::synthesis::*;

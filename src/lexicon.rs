@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use egui::{Button, Grid, Label, Sense, TextEdit, Ui, popup};
+use eframe::egui::{Button, Grid, Label, Layout, Sense, TextEdit, Ui, Window, popup};
 use crate::Language;
 
 pub type Lexicon = HashMap<String, String>;
@@ -115,7 +115,7 @@ impl LexiconEditWindow {
     pub fn show(&mut self, ui: &mut Ui, conlang_name: &str, lexicon: &mut Lexicon) -> bool {
         let mut not_manual_close = true; // negative semantics required to pass to Window::open()
         let mut auto_close = false;
-        egui::Window::new("Edit Lexicon")
+        Window::new("Edit Lexicon")
             .collapsible(false)
             .resizable(false)
             .open(&mut not_manual_close)
@@ -144,13 +144,13 @@ impl LexiconEditWindow {
     /// Return a function that can be passed to Grid::show() to draw the lexicon editing text fields.
     fn draw_edit_fields<'a>(&'a mut self, conlang_name: &'a str, lexicon: &'a mut Lexicon) -> impl FnOnce(&mut Ui) + 'a {
         move |ui| {
-            ui.with_layout(egui::Layout::right_to_left(), |ui| {
+            ui.with_layout(Layout::right_to_left(), |ui| {
                 ui.label(format!("{}:", conlang_name));
             });
             ui.text_edit_singleline(&mut self.conlang_phrase);
             ui.end_row();
     
-            ui.with_layout(egui::Layout::right_to_left(), |ui| {
+            ui.with_layout(Layout::right_to_left(), |ui| {
                 ui.label("English:");
             });
             let native_input = ui.text_edit_singleline(&mut self.native_phrase);
