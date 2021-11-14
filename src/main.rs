@@ -1,9 +1,8 @@
 use std::fmt::{self, Debug, Display};
-use std::collections::BTreeSet;
 use eframe::{egui, epi};
 use egui::{CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
-use crate::grapheme::Grapheme;
+use crate::grapheme::MasterGraphemeStorage;
 use crate::lexicon::*;
 use crate::synthesis::*;
 
@@ -33,7 +32,7 @@ pub struct Language {
     lexicon: Lexicon,
 
     // synthesis tab
-    graphemes: BTreeSet<Grapheme>,
+    graphemes: MasterGraphemeStorage,
     new_grapheme: String,
     max_syllables: (u8, u8),             // (function words, content words)
     syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)

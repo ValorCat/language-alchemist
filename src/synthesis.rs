@@ -145,14 +145,14 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
             ui.horizontal(|ui| {
                 ui.monospace(format!("{} =", name));
                 ui.spacing_mut().interact_size.y -= 6.0; // revert height change for right side of '='
-                draw_rule(ui, rule, &mut order);
+                draw_rule(ui, rule, &curr_lang.graphemes, &mut order);
             });
         }
     });
 }
 
 /// Recursively renders and updates a tree of syllable synthesis rules.
-fn draw_rule(ui: &mut Ui, rule: &mut SyllableRule, order: &mut usize) {
+fn draw_rule(ui: &mut Ui, rule: &mut SyllableRule, graphemes: &MasterGraphemeStorage, order: &mut usize) {
     use self::SyllableRule::*;
     *order += 1; // increment for each node visited
     match rule {
@@ -166,8 +166,8 @@ fn draw_rule(ui: &mut Ui, rule: &mut SyllableRule, order: &mut usize) {
                 let _ = ui.button("Variable");
             });
         }
-        Literal(graphemes, input) => {
-            ui.add(GraphemeInputField::new(graphemes, input, *order).small());
+        Literal(string, input) => {
+            ui.add(GraphemeInputField::new(string, input, *order).link(graphemes).small());
         }
     }
 }
