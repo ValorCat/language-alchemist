@@ -1,13 +1,45 @@
+use eframe::egui::ScrollArea;
 use eframe::egui::{Color32, DragValue, Grid, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use crate::Language;
 use crate::grapheme::*;
 
+/// The four root rules of the syllable synthesis grammar.
+#[derive(Default)]
+pub struct RootSyllableRules {
+    initial: SyllableRule,
+    middle: SyllableRule,
+    terminal: SyllableRule,
+    single: SyllableRule
+}
+
+/// A node in the syllable synthesis rules tree.
+pub enum SyllableRule {
+    NotSet,
+    Literal(Vec<Grapheme>, String),
+    // RandomLiteral(Vec<Grapheme>, String),
+    // Variable(String),
+    // Optional(Box<SyllableRule>),
+    // Union(Box<SyllableRule>, Box<SyllableRule>),
+    // Intersection(Box<SyllableRule>, Box<SyllableRule>),  // must contain two RandomLiterals
+    // Difference(Box<SyllableRule>, Box<SyllableRule>)
+}
+
+impl Default for SyllableRule {
+    fn default() -> Self {
+        Self::NotSet
+    }
+}
+
 /// Render contents of the 'synthesis' tab.
 pub fn draw_synthesis_tab(ui: &mut Ui, curr_lang: &mut Language) {
-    draw_graphemic_inventory(ui, curr_lang);
-    ui.add_space(10.0);
-    draw_syllable_counter(ui, curr_lang);
+    ScrollArea::vertical().show(ui, |ui| {
+        draw_graphemic_inventory(ui, curr_lang);
+        ui.add_space(10.0);
+        draw_syllable_rules(ui, curr_lang);
+        ui.add_space(10.0);
+        draw_syllable_counter(ui, curr_lang);
+    });
 }
 
 fn draw_graphemic_inventory(ui: &mut Ui, curr_lang: &mut Language) {
@@ -90,6 +122,52 @@ fn draw_syllable_counter(ui: &mut Ui, curr_lang: &mut Language) {
         }
         if content_total != 100 {
             ui.colored_label(Color32::RED, format!("  * The column \"Content Words\" adds up to {}%", content_total));
+        }
+    }
+}
+
+fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
+    ui.heading("Syllable Synthesis");
+    ui.label("Each word is formed from a sequence of syllables, which are themselves formed from sequences of \
+        graphemes. There are four types of syllables: initial, middle, terminal, and single (for words with \
+        only one syllable). Each syllable type is generated based on the rules you define in this section.");
+    ui.add_space(5.0);
+    ui.group(|ui| {
+        ui.spacing_mut().interact_size.y += 6.0; // add extra row height
+        let root = &mut curr_lang.syllable_rules;
+        let mut order = 0;
+        for (name, rule) in [
+            ("InitialSyllable", &mut root.initial),
+            ("MiddleSyllable", &mut root.middle),
+            ("TerminalSyllable", &mut root.terminal),
+            ("SingleSyllable", &mut root.single),
+        ] {
+            ui.horizontal(|ui| {
+                ui.monospace(format!("{} =", name));
+                ui.spacing_mut().interact_size.y -= 6.0; // revert height change for right side of '='
+                draw_rule(ui, rule, &mut order);
+            });
+        }
+    });
+}
+
+/// Recursively renders and updates a tree of syllable synthesis rules.
+fn draw_rule(ui: &mut Ui, rule: &mut SyllableRule, order: &mut usize) {
+    use self::SyllableRule::*;
+    *order += 1; // increment for each node visited
+    match rule {
+        NotSet => {
+            ui.menu_button("(click to set)", |ui| {
+                if ui.button("Grapheme").clicked() {
+                    *rule = Literal(Vec::new(), String::new());
+                    ui.close_menu();
+                }
+                let _ = ui.button("Random grapheme");
+                let _ = ui.button("Variable");
+            });
+        }
+        Literal(graphemes, input) => {
+            ui.add(GraphemeInputField::new(graphemes, input, *order).small());
         }
     }
 }

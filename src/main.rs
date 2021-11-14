@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display};
+use std::collections::BTreeSet;
 use eframe::{egui, epi};
 use egui::{CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
@@ -32,10 +33,11 @@ pub struct Language {
     lexicon: Lexicon,
 
     // synthesis tab
-    graphemes: Vec<Grapheme>,
+    graphemes: BTreeSet<Grapheme>,
     new_grapheme: String,
-    max_syllables: (u8, u8),            // (function words, content words)
-    syllable_wgts: (Vec<u16>, Vec<u16>) // (function words, content words)
+    max_syllables: (u8, u8),             // (function words, content words)
+    syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)
+    syllable_rules: RootSyllableRules
 }
 
 impl Language {
