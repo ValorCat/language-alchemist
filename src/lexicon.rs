@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use eframe::egui::{Button, Grid, Label, Layout, Sense, TextEdit, Ui, Window, popup};
+use eframe::egui::{Button, Grid, Label, Layout, ScrollArea, Sense, TextEdit, Ui, Window, popup};
 use crate::Language;
 
 pub type Lexicon = HashMap<String, String>;
@@ -44,34 +44,36 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
     });
 
     // draw the lexicon table
-    ui.group(|ui| {
-        // remove the extra 10 pts of spacing within the table
-        ui.spacing_mut().item_spacing += (0.0, -10.0).into();
-        
-        // draw the table header
-        Grid::new("lexicon table header")
-            .min_col_width(100.0)
-            .show(ui, |ui| {
-                ui.heading(&curr_lang.name);
-                ui.heading("English");
-                ui.end_row();
-        });
-
-        ui.separator();
-
-        // draw the table body
-        Grid::new("lexicon table")
-            .striped(true)
-            .min_col_width(100.0)
-            .show(ui, |ui| {
-                for (native, conlang) in curr_lang.lexicon.iter() {
-                    let conlang_lbl = ui.add(Label::new(conlang).sense(Sense::click()));
-                    let native_lbl = ui.add(Label::new(native).sense(Sense::click()));
-                    if conlang_lbl.clicked() || native_lbl.clicked() {
-                        *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
-                    }
+    ScrollArea::vertical().show(ui, |ui| {
+        ui.group(|ui| {
+            // remove the extra 10 pts of spacing within the table
+            ui.spacing_mut().item_spacing.y -= 10.0;
+            
+            // draw the table header
+            Grid::new("lexicon table header")
+                .min_col_width(100.0)
+                .show(ui, |ui| {
+                    ui.heading(&curr_lang.name);
+                    ui.heading("English");
                     ui.end_row();
-                }
+            });
+    
+            ui.separator();
+    
+            // draw the table body
+            Grid::new("lexicon table")
+                .striped(true)
+                .min_col_width(100.0)
+                .show(ui, |ui| {
+                    for (native, conlang) in curr_lang.lexicon.iter() {
+                        let conlang_lbl = ui.add(Label::new(conlang).sense(Sense::click()));
+                        let native_lbl = ui.add(Label::new(native).sense(Sense::click()));
+                        if conlang_lbl.clicked() || native_lbl.clicked() {
+                            *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
+                        }
+                        ui.end_row();
+                    }
+            });
         });
     });
 
