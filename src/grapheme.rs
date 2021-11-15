@@ -163,7 +163,12 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> Widget
             // draw without a frame to save space
             self.show_contents(ui)
         } else {
-            // draw with a frame
+            // fix height if small
+            if self.small {
+                ui.spacing_mut().interact_size.y = 16.0;
+            }
+
+            // draw within a frame
             Frame {
                 margin: Vec2::splat(if self.small { 2.0 } else { 6.0 }),
                 ..Frame::group(ui.style())

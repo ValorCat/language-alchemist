@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use eframe::egui::ScrollArea;
 use eframe::egui::{Color32, DragValue, Grid, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
@@ -17,7 +18,7 @@ pub struct RootSyllableRules {
 pub enum SyllableRule {
     NotSet,
     Literal(Vec<Grapheme>, String),
-    // RandomLiteral(Vec<Grapheme>, String),
+    Random(BTreeSet<Grapheme>, String),
     // Variable(String),
     // Optional(Box<SyllableRule>),
     // Union(Box<SyllableRule>, Box<SyllableRule>),
@@ -144,9 +145,9 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         ] {
             ui.horizontal(|ui| {
                 ui.monospace(format!("{} =", name));
-                ui.spacing_mut().interact_size.y -= 6.0; // revert height change for right side of '='
                 draw_rule(ui, rule, &curr_lang.graphemes, &mut order);
             });
+            ui.add_space(3.0);
         }
     });
 }
@@ -158,16 +159,28 @@ fn draw_rule(ui: &mut Ui, rule: &mut SyllableRule, graphemes: &MasterGraphemeSto
     match rule {
         NotSet => {
             ui.menu_button("(click to set)", |ui| {
-                if ui.button("Grapheme").clicked() {
-                    *rule = Literal(Vec::new(), String::new());
-                    ui.close_menu();
+                let menu: [(&str, Box<dyn Fn() -> SyllableRule>); 3] = [
+                    ("Specific grapheme", Box::new(|| Literal(Vec::new(), String::new()))),
+                    ("Random grapheme",   Box::new(|| Random(BTreeSet::new(), String::new()))),
+                    ("Variable",          Box::new(|| todo!()))
+                ];
+                for (name, func) in menu {
+                    if ui.button(name).clicked() {
+                        *rule = func();
+                        ui.close_menu();
+                    }
                 }
-                let _ = ui.button("Random grapheme");
-                let _ = ui.button("Variable");
             });
         }
         Literal(string, input) => {
             ui.add(GraphemeInputField::new(string, input, *order).link(graphemes).small());
+        }
+        Random(set, input) => {
+            ui.horizontal(|ui| {
+                ui.label("{");
+                ui.add(GraphemeInputField::new(set, input, *order).link(graphemes).small());
+                ui.label("}");
+            });
         }
     }
 }
