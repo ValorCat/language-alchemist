@@ -124,7 +124,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
                 *rect.right_mut() += 45.0;
                 rect
             };
-            if !self.small || self.graphemes.is_empty() || ui.rect_contains_pointer(visible_area) {
+            if !self.small || self.graphemes.is_empty() || !self.input.is_empty() || ui.rect_contains_pointer(visible_area) {
                 // draw input field at end
                 let input_buffer = ui.add({
                     let text_edit = TextEdit::singleline(self.input)
