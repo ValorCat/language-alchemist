@@ -36,7 +36,8 @@ pub struct Language {
     new_grapheme: String,
     max_syllables: (u8, u8),             // (function words, content words)
     syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)
-    syllable_rules: SyllableRules
+    syllable_rules: SyllableRules,
+    syllable_edit_mode: bool
 }
 
 impl Language {

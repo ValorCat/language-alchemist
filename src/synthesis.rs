@@ -179,6 +179,11 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         graphemes. There are four types of syllables: initial, middle, terminal, and single (for words with \
         only one syllable). Each syllable type is generated based on the rules you define in this section.");
     ui.add_space(5.0);
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut curr_lang.syllable_edit_mode, false, "View Mode");
+        ui.selectable_value(&mut curr_lang.syllable_edit_mode, true, "Edit Mode");
+    });
+    ui.add_space(5.0);
     ui.group(|ui| {
         ui.set_width(ui.available_width());      // fill available width
         ui.spacing_mut().interact_size.y = 20.0; // fix row height
@@ -186,22 +191,22 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         for (name, rule) in curr_lang.syllable_rules.iter_mut() {
             ui.horizontal_wrapped(|ui| {
                 ui.monospace(format!("{} =", name));
-                draw_or_node(rule, ui, &curr_lang.graphemes, &mut order);
+                draw_or_node(rule, ui, curr_lang.syllable_edit_mode, &curr_lang.graphemes, &mut order);
             });
             ui.add_space(3.0);
         }
     });
 }
 
-fn draw_or_node(rule: &mut OrRule, ui: &mut Ui, graphemes: &MasterGraphemeStorage, order: &mut usize) {
-    draw_and_node(&mut rule.head, ui, graphemes, order);
+fn draw_or_node(rule: &mut OrRule, ui: &mut Ui, edit_mode: bool, graphemes: &MasterGraphemeStorage, order: &mut usize) {
+    draw_and_node(&mut rule.head, ui, edit_mode, graphemes, order);
     for and_rule in &mut rule.tail {
         ui.heading("OR");
-        draw_and_node(and_rule, ui, graphemes, order);
+        draw_and_node(and_rule, ui, edit_mode, graphemes, order);
     }
 
     // draw button to insert new OR clause
-    if ui.rect_contains_pointer(ui.max_rect()) {
+    if edit_mode {
         ui.add_space(12.0);
         let btn = ui.button("OR...").on_hover_text("Click to add a new OR clause");
         if btn.clicked() {
@@ -210,12 +215,11 @@ fn draw_or_node(rule: &mut OrRule, ui: &mut Ui, graphemes: &MasterGraphemeStorag
     }
 }
 
-fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, graphemes: &MasterGraphemeStorage, order: &mut usize) {
-    draw_leaf_node(&mut rule.head, ui, ui.rect_contains_pointer(ui.max_rect()), graphemes, order);
+fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, edit_mode: bool, graphemes: &MasterGraphemeStorage, order: &mut usize) {
+    draw_leaf_node(&mut rule.head, ui, edit_mode, graphemes, order);
     let mut insert_pos = None;
     for (i, leaf_rule) in rule.tail.iter_mut().enumerate() {
-        let hovering_on_line = ui.rect_contains_pointer(ui.max_rect());
-        if hovering_on_line {
+        if edit_mode {
             let btn = ui.small_button("+").on_hover_text("Click to add a new + clause");
             if btn.clicked() {
                 insert_pos = Some(i);
@@ -223,7 +227,7 @@ fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, graphemes: &MasterGraphemeStor
         } else {
             ui.label("+");
         }
-        draw_leaf_node(leaf_rule, ui, hovering_on_line, graphemes, order);
+        draw_leaf_node(leaf_rule, ui, edit_mode, graphemes, order);
     }
 
     // add new node if '+' button was clicked
@@ -232,49 +236,51 @@ fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, graphemes: &MasterGraphemeStor
     }
 
     // draw button to insert a new '+' operand
-    if ui.rect_contains_pointer(ui.max_rect()) {
-        let btn = ui.small_button("+...").on_hover_text("Click to add a new + clause");
+    if edit_mode {
+        let btn = ui.small_button("+").on_hover_text("Click to add a new + clause");
         if btn.clicked() {
             rule.tail.push(Default::default());
         }
     }
 }
 
-fn draw_leaf_node(rule: &mut LeafRule, ui: &mut Ui, hovering_on_line: bool,
-        graphemes: &MasterGraphemeStorage, order: &mut usize) {
+fn draw_leaf_node(rule: &mut LeafRule, ui: &mut Ui, edit_mode: bool, graphemes: &MasterGraphemeStorage, order: &mut usize) {
     *order += 1; // increment for each leaf node visited
-    let response = match rule {
+    match rule {
         LeafRule::Uninitialized => {
-            ui.menu_button("(click to set)", |ui| {
-                for (menu_name, new_rule) in LeafRule::menu() {
-                    if ui.button(menu_name).clicked() {
-                        *rule = new_rule();
-                        ui.close_menu();
+            if edit_mode {
+                ui.menu_button("(click to set)", |ui| {
+                    for (menu_name, new_rule) in LeafRule::menu() {
+                        if ui.button(menu_name).clicked() {
+                            *rule = new_rule();
+                            ui.close_menu();
+                        }
                     }
-                }
-            }).response
+                }).response
+            } else {
+                ui.colored_label(Color32::RED, "(not set)")
+            }
         }
         LeafRule::Sequence(string, input) => {
-            ui.add(GraphemeInputField::new(string, input, *order).link(graphemes)
-                .small().with_input(hovering_on_line))
+            ui.add(GraphemeInputField::new(string, input, *order)
+                .link(graphemes)
+                .small(true)
+                .allow_editing(edit_mode))
         }
         LeafRule::Set(set, input) => {
             ui.scope(|ui| {
                 ui.label("{");
-                ui.add(GraphemeInputField::new(set, input, *order).link(graphemes)
-                    .small().with_input(hovering_on_line));
+                ui.add(GraphemeInputField::new(set, input, *order)
+                    .link(graphemes)
+                    .small(true)
+                    .allow_editing(edit_mode));
                 ui.label("}");
             }).response
         }
         LeafRule::Blank => {
-            ui.add(eframe::egui::Label::new("blank").sense(eframe::egui::Sense::click()))
+            ui.label("blank")
         }
     };
-    response.context_menu(|ui| {
-        if ui.button("Close").clicked() {
-            ui.close_menu();
-        }
-    });
 }
 
 fn int_field_1_to_100(value: &mut u8) -> DragValue {

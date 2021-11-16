@@ -68,7 +68,7 @@ pub struct GraphemeInputField<'data, 'buffer, 'master, Storage: GraphemeStorage>
     input: &'buffer mut String,
     master: Option<&'master MasterGraphemeStorage>,
     small: bool,
-    show_input: bool,
+    allow_editing: bool,
     id: Id
 }
 
@@ -79,7 +79,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
     /// keep the input field focused after adding a new grapheme.
     pub fn new(graphemes: &'data mut Storage, input: &'buffer mut String, id: impl Hash) -> Self
     {
-        GraphemeInputField { graphemes, input, master: None, small: false, show_input: true, id: Id::new(id) }
+        GraphemeInputField { graphemes, input, master: None, small: false, allow_editing: true, id: Id::new(id) }
     }
 
     /// Link this GraphemeInputField to a master list. Graphemes in this container
@@ -91,15 +91,14 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
 
     /// Make the input field much lower profile. The frame border and hint text will
     /// disappear once some graphemes have been added.
-    pub fn small(mut self) -> Self {
-        self.small = true;
+    pub fn small(mut self, small: bool) -> Self {
+        self.small = small;
         self
     }
 
-    /// Determine whether to show the input field at all. It will always appear if it
-    /// contains text or if the GraphemeInputField doesn't contain any graphemes.
-    pub fn with_input(mut self, show: bool) -> Self {
-        self.show_input = show;
+    /// Determine whether to show the input field at all.
+    pub fn allow_editing(mut self, allow: bool) -> Self {
+        self.allow_editing = allow;
         self
     }
 
@@ -123,12 +122,17 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
                         ui.colored_label(Color32::RED, "Not in graphemic inventory");
                     })
                 };
-                !response.on_hover_text("Click to remove").clicked()
+
+                // true to keep in list, false to remove
+                !self.allow_editing || !response.on_hover_text("Click to remove").clicked()
             });
     
-            // hide input field on small instances when not moused over
-            if self.show_input || self.graphemes.is_empty() || !self.input.is_empty() {
+            if self.allow_editing {
+                // show input field if in edit mode
                 self.show_input(ui);
+            } else if self.graphemes.is_empty() {
+                // show error if empty and in view mode
+                ui.colored_label(Color32::RED, "(no string given)");
             }
         }).response
     }
@@ -139,10 +143,12 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
             let text_edit = TextEdit::singleline(self.input)
                 .frame(false)
                 .id(self.id);
-            if self.small {
+            if !self.small {
+                text_edit.hint_text("Add a grapheme...")
+            } else if self.graphemes.is_empty() {
                 text_edit.hint_text("Add...").desired_width(32.0)
             } else {
-                text_edit.hint_text("Add a grapheme...")
+                text_edit.hint_text("...").desired_width(16.0)
             }
         });
 
