@@ -216,16 +216,21 @@ fn draw_or_node(rule: &mut OrRule, ui: &mut Ui, edit_mode: bool, graphemes: &Mas
 }
 
 fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, edit_mode: bool, graphemes: &MasterGraphemeStorage, order: &mut usize) {
+    // helper function to draw '+' button
+    let plus_button = |ui: &mut Ui| ui.small_button("+").on_hover_text("Click to add a new + clause");
+
+    // draw button to insert node at beginning
+    if edit_mode && plus_button(ui).clicked() {
+        rule.tail.insert(0, std::mem::take(&mut rule.head));
+    }
+
     draw_leaf_node(&mut rule.head, ui, edit_mode, graphemes, order);
     let mut insert_pos = None;
     for (i, leaf_rule) in rule.tail.iter_mut().enumerate() {
-        if edit_mode {
-            let btn = ui.small_button("+").on_hover_text("Click to add a new + clause");
-            if btn.clicked() {
-                insert_pos = Some(i);
-            }
-        } else {
+        if !edit_mode {
             ui.label("+");
+        } else if plus_button(ui).clicked() {
+            insert_pos = Some(i);
         }
         draw_leaf_node(leaf_rule, ui, edit_mode, graphemes, order);
     }
@@ -235,12 +240,9 @@ fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, edit_mode: bool, graphemes: &M
         rule.tail.insert(insert_pos, Default::default());
     }
 
-    // draw button to insert a new '+' operand
-    if edit_mode {
-        let btn = ui.small_button("+").on_hover_text("Click to add a new + clause");
-        if btn.clicked() {
-            rule.tail.push(Default::default());
-        }
+    // draw button to insert node at end
+    if edit_mode && plus_button(ui).clicked() {
+        rule.tail.push(Default::default());
     }
 }
 
