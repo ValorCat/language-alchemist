@@ -68,6 +68,7 @@ pub struct GraphemeInputField<'data, 'buffer, 'master, Storage: GraphemeStorage>
     input: &'buffer mut String,
     master: Option<&'master MasterGraphemeStorage>,
     small: bool,
+    show_input: bool,
     id: Id
 }
 
@@ -78,7 +79,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
     /// keep the input field focused after adding a new grapheme.
     pub fn new(graphemes: &'data mut Storage, input: &'buffer mut String, id: impl Hash) -> Self
     {
-        GraphemeInputField { graphemes, input, master: None, small: false, id: Id::new(id) }
+        GraphemeInputField { graphemes, input, master: None, small: false, show_input: true, id: Id::new(id) }
     }
 
     /// Link this GraphemeInputField to a master list. Graphemes in this container
@@ -95,11 +96,18 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
         self
     }
 
+    /// Determine whether to show the input field at all. It will always appear if it
+    /// contains text or if the GraphemeInputField doesn't contain any graphemes.
+    pub fn with_input(mut self, show: bool) -> Self {
+        self.show_input = show;
+        self
+    }
+
     /// Draw the contents of the GraphemeInputField.
     fn show_contents(&mut self, ui: &mut Ui) -> Response {
         ui.horizontal_wrapped(|ui| {
             // add extra space between graphemes
-            ui.spacing_mut().item_spacing.x += if self.small { -2.0 } else { 4.0 };
+            ui.spacing_mut().item_spacing.x += if self.small { -3.0 } else { 4.0 };
     
             // draw graphemes, and remove them if clicked
             self.graphemes.update(|grapheme| {
@@ -119,39 +127,40 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
             });
     
             // hide input field on small instances when not moused over
-            let visible_area = {
-                let mut rect = ui.min_rect();
-                *rect.right_mut() += 45.0;
-                rect
-            };
-            if !self.small || self.graphemes.is_empty() || !self.input.is_empty() || ui.rect_contains_pointer(visible_area) {
-                // draw input field at end
-                let input_buffer = ui.add({
-                    let text_edit = TextEdit::singleline(self.input)
-                        .frame(false)
-                        .id(self.id);
-                    if self.small {
-                        text_edit.hint_text("Add...").desired_width(35.0)
-                    } else {
-                        text_edit.hint_text("Add a grapheme...")
-                    }
-                });
-                
-                // add grapheme on space, enter, or focus loss
-                if input_buffer.changed() {
-                    while let Some(space_pos) = self.input.find(char::is_whitespace) {
-                        if space_pos > 0 {
-                            self.graphemes.add(Grapheme(self.input[..space_pos].to_owned()));
-                        }
-                        self.input.replace_range(..=space_pos, "");
-                    }
-                }
-                if input_buffer.lost_focus() && !self.input.is_empty() {
-                    self.graphemes.add(Grapheme(self.input.clone()));
-                    self.input.clear();
-                }
+            if self.show_input || self.graphemes.is_empty() || !self.input.is_empty() {
+                self.show_input(ui);
             }
         }).response
+    }
+
+    /// Draw the text input field at the end of the widget.
+    fn show_input(&mut self, ui: &mut Ui) {
+        let input_buffer = ui.add({
+            let text_edit = TextEdit::singleline(self.input)
+                .frame(false)
+                .id(self.id);
+            if self.small {
+                text_edit.hint_text("Add...").desired_width(32.0)
+            } else {
+                text_edit.hint_text("Add a grapheme...")
+            }
+        });
+
+        // add grapheme on space or enter...
+        if input_buffer.changed() {
+            while let Some(space_pos) = self.input.find(char::is_whitespace) {
+                if space_pos > 0 {
+                    self.graphemes.add(Grapheme(self.input[..space_pos].to_owned()));
+                }
+                self.input.replace_range(..=space_pos, "");
+            }
+        }
+
+        // ...or on loss of focus
+        if input_buffer.lost_focus() && !self.input.is_empty() {
+            self.graphemes.add(Grapheme(self.input.clone()));
+            self.input.clear();
+        }
     }
 }
 
@@ -163,14 +172,9 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> Widget
             // draw without a frame to save space
             self.show_contents(ui)
         } else {
-            // fix height if small
-            if self.small {
-                ui.spacing_mut().interact_size.y = 16.0;
-            }
-
             // draw within a frame
             Frame {
-                margin: Vec2::splat(if self.small { 2.0 } else { 6.0 }),
+                margin: Vec2::splat(if self.small { 0.0 } else { 6.0 }),
                 ..Frame::group(ui.style())
             }.show(ui, |ui| {
                 self.show_contents(ui)

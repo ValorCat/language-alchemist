@@ -1,34 +1,80 @@
 use std::collections::BTreeSet;
-use eframe::egui::ScrollArea;
-use eframe::egui::{Color32, DragValue, Grid, Ui};
+use eframe::egui::{Color32, DragValue, Grid, ScrollArea, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use crate::Language;
 use crate::grapheme::*;
 
-/// The four root rules of the syllable synthesis grammar.
+/// The four root rules of the syllable synthesis grammar. Rules are stored in
+/// sum-of-products form.
 #[derive(Default)]
-pub struct RootSyllableRules {
-    initial: SyllableRule,
-    middle: SyllableRule,
-    terminal: SyllableRule,
-    single: SyllableRule
+pub struct SyllableRules {
+    initial: OrRule,
+    middle: OrRule,
+    terminal: OrRule,
+    single: OrRule,
 }
 
-/// A node in the syllable synthesis rules tree.
-pub enum SyllableRule {
-    NotSet,
-    Literal(Vec<Grapheme>, String),
-    Random(BTreeSet<Grapheme>, String),
+impl SyllableRules {
+    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut OrRule)> {
+        [
+            ("InitialSyllable", &mut self.initial),
+            ("MiddleSyllable", &mut self.middle),
+            ("TerminalSyllable", &mut self.terminal),
+            ("SingleSyllable", &mut self.single),
+        ].into_iter()
+    }
+}
+
+/// A leaf node in the syllable synthesis grammar.
+enum LeafRule {
+    Uninitialized,
+    Sequence(Vec<Grapheme>, String),
+    Set(BTreeSet<Grapheme>, String),
     // Variable(String),
-    // Optional(Box<SyllableRule>),
-    // Union(Box<SyllableRule>, Box<SyllableRule>),
-    // Intersection(Box<SyllableRule>, Box<SyllableRule>),  // must contain two RandomLiterals
-    // Difference(Box<SyllableRule>, Box<SyllableRule>)
+    Blank
 }
 
-impl Default for SyllableRule {
+/// An AND node in the syllable synthesis grammar.
+#[derive(Default)]
+struct AndRule {
+    head: LeafRule,
+    tail: Vec<LeafRule>
+}
+
+/// An OR node in the syllable synthesis grammar.
+#[derive(Default)]
+struct OrRule {
+    head: AndRule,
+    tail: Vec<AndRule>
+}
+
+impl LeafRule {
+    /// Return an iterator over a "menu" of leaf node types in a (name, constructor) format.
+    fn menu() -> impl Iterator<Item = (&'static str, fn() -> Self)> {
+        let names = ["String", "Random", "Blank"];
+        let funcs = [Self::sequence, Self::set, Self::blank];
+        names.into_iter().zip(funcs)
+    }
+
+    /// Construct a default Sequence node.
+    fn sequence() -> Self {
+        Self::Sequence(Vec::new(), String::new())
+    }
+
+    /// Construct a default Set node.
+    fn set() -> Self {
+        Self::Set(BTreeSet::new(), String::new())
+    }
+
+    /// Construct a default Blank node.
+    fn blank() -> Self {
+        Self::Blank
+    }
+}
+
+impl Default for LeafRule {
     fn default() -> Self {
-        Self::NotSet
+        Self::Uninitialized
     }
 }
 
@@ -134,55 +180,101 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         only one syllable). Each syllable type is generated based on the rules you define in this section.");
     ui.add_space(5.0);
     ui.group(|ui| {
-        ui.spacing_mut().interact_size.y += 6.0; // add extra row height
-        let root = &mut curr_lang.syllable_rules;
-        let mut order = 0;
-        for (name, rule) in [
-            ("InitialSyllable", &mut root.initial),
-            ("MiddleSyllable", &mut root.middle),
-            ("TerminalSyllable", &mut root.terminal),
-            ("SingleSyllable", &mut root.single),
-        ] {
-            ui.horizontal(|ui| {
+        ui.set_width(ui.available_width());      // fill available width
+        ui.spacing_mut().interact_size.y = 20.0; // fix row height
+        let mut order = 0; // incremented for each leaf node visited
+        for (name, rule) in curr_lang.syllable_rules.iter_mut() {
+            ui.horizontal_wrapped(|ui| {
                 ui.monospace(format!("{} =", name));
-                draw_rule(ui, rule, &curr_lang.graphemes, &mut order);
+                draw_or_node(rule, ui, &curr_lang.graphemes, &mut order);
             });
             ui.add_space(3.0);
         }
     });
 }
 
-/// Recursively renders and updates a tree of syllable synthesis rules.
-fn draw_rule(ui: &mut Ui, rule: &mut SyllableRule, graphemes: &MasterGraphemeStorage, order: &mut usize) {
-    use self::SyllableRule::*;
-    *order += 1; // increment for each node visited
-    match rule {
-        NotSet => {
+fn draw_or_node(rule: &mut OrRule, ui: &mut Ui, graphemes: &MasterGraphemeStorage, order: &mut usize) {
+    draw_and_node(&mut rule.head, ui, graphemes, order);
+    for and_rule in &mut rule.tail {
+        ui.heading("OR");
+        draw_and_node(and_rule, ui, graphemes, order);
+    }
+
+    // draw button to insert new OR clause
+    if ui.rect_contains_pointer(ui.max_rect()) {
+        ui.add_space(12.0);
+        let btn = ui.button("OR...").on_hover_text("Click to add a new OR clause");
+        if btn.clicked() {
+            rule.tail.push(Default::default());
+        }
+    }
+}
+
+fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, graphemes: &MasterGraphemeStorage, order: &mut usize) {
+    draw_leaf_node(&mut rule.head, ui, ui.rect_contains_pointer(ui.max_rect()), graphemes, order);
+    let mut insert_pos = None;
+    for (i, leaf_rule) in rule.tail.iter_mut().enumerate() {
+        let hovering_on_line = ui.rect_contains_pointer(ui.max_rect());
+        if hovering_on_line {
+            let btn = ui.small_button("+").on_hover_text("Click to add a new + clause");
+            if btn.clicked() {
+                insert_pos = Some(i);
+            }
+        } else {
+            ui.label("+");
+        }
+        draw_leaf_node(leaf_rule, ui, hovering_on_line, graphemes, order);
+    }
+
+    // add new node if '+' button was clicked
+    if let Some(insert_pos) = insert_pos {
+        rule.tail.insert(insert_pos, Default::default());
+    }
+
+    // draw button to insert a new '+' operand
+    if ui.rect_contains_pointer(ui.max_rect()) {
+        let btn = ui.small_button("+...").on_hover_text("Click to add a new + clause");
+        if btn.clicked() {
+            rule.tail.push(Default::default());
+        }
+    }
+}
+
+fn draw_leaf_node(rule: &mut LeafRule, ui: &mut Ui, hovering_on_line: bool,
+        graphemes: &MasterGraphemeStorage, order: &mut usize) {
+    *order += 1; // increment for each leaf node visited
+    let response = match rule {
+        LeafRule::Uninitialized => {
             ui.menu_button("(click to set)", |ui| {
-                let menu: [(&str, Box<dyn Fn() -> SyllableRule>); 3] = [
-                    ("Specific grapheme", Box::new(|| Literal(Vec::new(), String::new()))),
-                    ("Random grapheme",   Box::new(|| Random(BTreeSet::new(), String::new()))),
-                    ("Variable",          Box::new(|| todo!()))
-                ];
-                for (name, func) in menu {
-                    if ui.button(name).clicked() {
-                        *rule = func();
+                for (menu_name, new_rule) in LeafRule::menu() {
+                    if ui.button(menu_name).clicked() {
+                        *rule = new_rule();
                         ui.close_menu();
                     }
                 }
-            });
+            }).response
         }
-        Literal(string, input) => {
-            ui.add(GraphemeInputField::new(string, input, *order).link(graphemes).small());
+        LeafRule::Sequence(string, input) => {
+            ui.add(GraphemeInputField::new(string, input, *order).link(graphemes)
+                .small().with_input(hovering_on_line))
         }
-        Random(set, input) => {
-            ui.horizontal(|ui| {
+        LeafRule::Set(set, input) => {
+            ui.scope(|ui| {
                 ui.label("{");
-                ui.add(GraphemeInputField::new(set, input, *order).link(graphemes).small());
+                ui.add(GraphemeInputField::new(set, input, *order).link(graphemes)
+                    .small().with_input(hovering_on_line));
                 ui.label("}");
-            });
+            }).response
         }
-    }
+        LeafRule::Blank => {
+            ui.add(eframe::egui::Label::new("blank").sense(eframe::egui::Sense::click()))
+        }
+    };
+    response.context_menu(|ui| {
+        if ui.button("Close").clicked() {
+            ui.close_menu();
+        }
+    });
 }
 
 fn int_field_1_to_100(value: &mut u8) -> DragValue {
