@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use eframe::egui::Response;
 use eframe::egui::{Color32, DragValue, Grid, ScrollArea, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use crate::Language;
@@ -50,10 +51,23 @@ struct OrRule {
 
 impl LeafRule {
     /// Return an iterator over a "menu" of leaf node types in a (name, constructor) format.
-    fn menu() -> impl Iterator<Item = (&'static str, fn() -> Self)> {
+    fn choices() -> impl Iterator<Item = (&'static str, fn() -> Self)> {
         let names = ["String", "Random", "Blank"];
         let funcs = [Self::sequence, Self::set, Self::blank];
         names.into_iter().zip(funcs)
+    }
+
+    /// Show a menu button that offers the choices in `LeafRule::choices()`, and then calls
+    /// `action` with the chosen option.
+    fn menu(ui: &mut Ui, text: &str, action: impl FnOnce(LeafRule)) -> Response {
+        ui.menu_button(text, |ui: &mut Ui| {
+            LeafRule::choices()
+                .find(|(name, _)| ui.button(*name).clicked())
+                .map(|(_, choice)| {
+                    action(choice());
+                    ui.close_menu();
+                });
+        }).response
     }
 
     /// Construct a default Sequence node.
@@ -75,6 +89,12 @@ impl LeafRule {
 impl Default for LeafRule {
     fn default() -> Self {
         Self::Uninitialized
+    }
+}
+
+impl AndRule {
+    fn new(head: LeafRule) -> Self {
+        AndRule { head, tail: Vec::new() }
     }
 }
 
@@ -208,41 +228,33 @@ fn draw_or_node(rule: &mut OrRule, ui: &mut Ui, edit_mode: bool, graphemes: &Mas
     // draw button to insert new OR clause
     if edit_mode {
         ui.add_space(12.0);
-        let btn = ui.button("OR...").on_hover_text("Click to add a new OR clause");
-        if btn.clicked() {
-            rule.tail.push(Default::default());
-        }
+        LeafRule::menu(ui, "OR...", |new_rule| rule.tail.push(AndRule::new(new_rule)));
     }
 }
 
 fn draw_and_node(rule: &mut AndRule, ui: &mut Ui, edit_mode: bool, graphemes: &MasterGraphemeStorage, order: &mut usize) {
-    // helper function to draw '+' button
-    let plus_button = |ui: &mut Ui| ui.small_button("+").on_hover_text("Click to add a new + clause");
-
     // draw button to insert node at beginning
-    if edit_mode && plus_button(ui).clicked() {
-        rule.tail.insert(0, std::mem::take(&mut rule.head));
+    if edit_mode {
+        LeafRule::menu(ui, "+", |new_rule| rule.tail.insert(0, std::mem::replace(&mut rule.head, new_rule)));
     }
 
+    // draw first node
     draw_leaf_node(&mut rule.head, ui, edit_mode, graphemes, order);
-    let mut insert_pos = None;
-    for (i, leaf_rule) in rule.tail.iter_mut().enumerate() {
-        if !edit_mode {
-            ui.label("+");
-        } else if plus_button(ui).clicked() {
-            insert_pos = Some(i);
-        }
-        draw_leaf_node(leaf_rule, ui, edit_mode, graphemes, order);
-    }
 
-    // add new node if '+' button was clicked
-    if let Some(insert_pos) = insert_pos {
-        rule.tail.insert(insert_pos, Default::default());
+    // draw remaining nodes
+    // use indexed loop because we modify the list's length in the loop
+    for i in 0..rule.tail.len() {
+        if edit_mode {
+            LeafRule::menu(ui, "+", |new_rule| rule.tail.insert(i, new_rule));
+        } else {
+            ui.label("+");
+        }
+        draw_leaf_node(&mut rule.tail[i], ui, edit_mode, graphemes, order);
     }
 
     // draw button to insert node at end
-    if edit_mode && plus_button(ui).clicked() {
-        rule.tail.push(Default::default());
+    if edit_mode {
+        LeafRule::menu(ui, "+", |new_rule| rule.tail.push(new_rule));
     }
 }
 
@@ -251,14 +263,7 @@ fn draw_leaf_node(rule: &mut LeafRule, ui: &mut Ui, edit_mode: bool, graphemes: 
     match rule {
         LeafRule::Uninitialized => {
             if edit_mode {
-                ui.menu_button("(click to set)", |ui| {
-                    for (menu_name, new_rule) in LeafRule::menu() {
-                        if ui.button(menu_name).clicked() {
-                            *rule = new_rule();
-                            ui.close_menu();
-                        }
-                    }
-                }).response
+                LeafRule::menu(ui, "(click to set)", |new_rule| *rule = new_rule)
             } else {
                 ui.colored_label(Color32::RED, "(not set)")
             }
