@@ -16,22 +16,19 @@ pub struct SyllableRoots {
 }
 
 impl SyllableRoots {
-    fn iter(&self) -> impl Iterator<Item = (&str, &OrRule)> {
-        [
-            ("InitialSyllable", &self.initial),
-            ("MiddleSyllable", &self.middle),
-            ("TerminalSyllable", &self.terminal),
-            ("SingleSyllable", &self.single),
-        ].into_iter()
+    /// Return an iterator over the root rule names.
+    fn names() -> impl Iterator<Item = &'static str> {
+        ["InitialSyllable", "MiddleSyllable", "TerminalSyllable", "SingleSyllable"].into_iter()
     }
 
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut OrRule)> {
-        [
-            ("InitialSyllable", &mut self.initial),
-            ("MiddleSyllable", &mut self.middle),
-            ("TerminalSyllable", &mut self.terminal),
-            ("SingleSyllable", &mut self.single),
-        ].into_iter()
+    /// Return an iterator over immutable references to the root rules.
+    fn iter(&self) -> impl Iterator<Item = &OrRule> {
+        [&self.initial, &self.middle, &self.terminal, &self.single].into_iter()
+    }
+
+    /// Return an iterator over mutable references to the root rules.
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut OrRule> {
+        [&mut self.initial, &mut self.middle, &mut self.terminal, &mut self.single].into_iter()
     }
 }
 
@@ -249,7 +246,8 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         let mut new_var = None; // set if a new variable is referenced
 
         // 4 root rules
-        for (name, rule) in curr_lang.syllable_roots.iter_mut() {
+        let roots = &mut curr_lang.syllable_roots;
+        for (name, rule) in SyllableRoots::names().zip(roots.iter_mut()) {
             ui.horizontal_wrapped(|ui| {
                 ui.monospace(format!("{} =", name));
                 draw_or_node(rule, ui, curr_lang.syllable_edit_mode, &curr_lang.graphemes,
@@ -281,7 +279,10 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
 
         // add new variable if an unrecognized name was used
         if let Some(new_var) = new_var {
-            vars.entry(new_var).or_insert_with(Default::default);
+            // we have to use all() instead of contains() because we're comparing &str to String
+            if SyllableRoots::names().all(|s| *s != new_var) {
+                vars.entry(new_var.clone()).or_insert_with(Default::default);
+            }
         }
     });
 }
@@ -385,7 +386,7 @@ fn draw_leaf_node(
 /// Visited variables are stored in the set `vars.reachable`.
 fn flag_reachable_vars(roots: &SyllableRoots, vars: &mut SyllableVars) {
     vars.reachable.clear();
-    let mut stack: VecDeque<&OrRule> = roots.iter().map(|(_, rule)| rule).collect();
+    let mut stack: VecDeque<&OrRule> = roots.iter().collect();
     while let Some(next) = stack.pop_back() {
         next.iter()
             .flat_map(NonEmptyList::iter)
@@ -394,7 +395,7 @@ fn flag_reachable_vars(roots: &SyllableRoots, vars: &mut SyllableVars) {
                 _ => None
             })
             .filter(|&var| vars.reachable.insert(var.clone())) // skip already-visited variables
-            .filter_map(|var| vars.vars.get(var))
+            .filter_map(|var| vars.vars.get(var)) // map name to rule and skip root variables
             .for_each(|rule| stack.push_back(rule))
     }
 }
