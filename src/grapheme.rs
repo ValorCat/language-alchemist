@@ -153,7 +153,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
                 .frame(false)
                 .id(self.id);
             if !self.small {
-                text_edit.hint_text("Add a grapheme...")
+                text_edit.hint_text("Add a grapheme...").desired_width(120.0)
             } else if self.graphemes.is_empty() {
                 text_edit.hint_text("Type...").desired_width(36.0)
             } else {

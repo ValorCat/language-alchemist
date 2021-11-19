@@ -407,8 +407,9 @@ fn draw_leaf_node(
                 let response = ui.add(TextEdit::singleline(input)
                     .text_style(TextStyle::Monospace)
                     .hint_text("Type...")
-                    .desired_width(90.0));
+                    .desired_width(80.0));
                 if response.changed() && !input.is_empty() {
+                    input.retain(|c| !c.is_whitespace());
                     *new_var = Some(input.clone());
                 }
                 false
