@@ -38,7 +38,7 @@ pub struct Language {
     syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)
     syllable_roots: SyllableRoots,
     syllable_vars: SyllableVars,
-    syllable_edit_mode: bool
+    syllable_edit_mode: SyllableEditMode
 }
 
 impl Language {

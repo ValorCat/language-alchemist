@@ -69,6 +69,7 @@ pub struct GraphemeInputField<'data, 'buffer, 'master, Storage: GraphemeStorage>
     master: Option<&'master MasterGraphemeStorage>,
     small: bool,
     allow_editing: bool,
+    interactable: bool,
     id: Id
 }
 
@@ -79,7 +80,9 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
     /// keep the input field focused after adding a new grapheme.
     pub fn new(graphemes: &'data mut Storage, input: &'buffer mut String, id: impl Hash) -> Self
     {
-        GraphemeInputField { graphemes, input, master: None, small: false, allow_editing: true, id: Id::new(id) }
+        GraphemeInputField {
+            graphemes, input, master: None, small: false, allow_editing: true, interactable: true, id: Id::new(id)
+        }
     }
 
     /// Link this GraphemeInputField to a master list. Graphemes in this container
@@ -102,6 +105,12 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
         self
     }
 
+    /// Make the graphemes appear highlighted and show tooltips when moused over.
+    pub fn interactable(mut self, interactable: bool) -> Self {
+        self.interactable = interactable;
+        self
+    }
+
     /// Draw the contents of the GraphemeInputField.
     fn show_contents(&mut self, ui: &mut Ui) -> Response {
         ui.horizontal_wrapped(|ui| {
@@ -116,7 +125,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
                 let text = if !invalid { text } else { text.color(Color32::RED) };
                 let button = Button::new(text);
                 let button = if !self.small { button } else { button.small() };
-                let response = ui.add(button);
+                let response = ui.add_enabled(self.interactable, button);
                 let response = if !invalid { response } else {
                     response.on_hover_ui(|ui| {
                         ui.colored_label(Color32::RED, "Not in graphemic inventory");
@@ -131,8 +140,8 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
                 // show input field if in edit mode
                 self.show_input(ui);
             } else if self.graphemes.is_empty() {
-                // show error if empty and in view mode
-                ui.colored_label(Color32::RED, "(no string given)");
+                // show error if empty and not in edit mode
+                ui.colored_label(Color32::RED, "(no graphemes)");
             }
         }).response
     }
@@ -174,7 +183,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> Widget
     for GraphemeInputField<'data, 'buffer, 'master, Storage>
 {
     fn ui(mut self, ui: &mut Ui) -> Response {
-        if self.small && !self.graphemes.is_empty() {
+        if !self.allow_editing || self.small && !self.graphemes.is_empty() {
             // draw without a frame to save space
             self.show_contents(ui)
         } else {
