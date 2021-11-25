@@ -10,4 +10,5 @@ edition = "2021"
 # egui = "0.15.0"
 eframe = { git = "https://github.com/emilk/egui.git" }
 itertools = "0.10.1"
+rand = "0.8.4"
 serde = { version = "1", features = ["derive"], optional = true }

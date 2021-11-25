@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
-use eframe::egui::{Color32, DragValue, Grid, Label, Response, RichText, ScrollArea, Sense, TextEdit, TextStyle, Ui};
+use eframe::egui::{Button, Color32, DragValue, Grid, Label, Response, RichText, ScrollArea, Sense, TextEdit, TextStyle, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
+use rand::{distributions::WeightedIndex, prelude::*};
 use crate::Language;
 use crate::grapheme::*;
 
@@ -16,10 +17,31 @@ impl Default for SyllableEditMode {
     }
 }
 
+/// A mapping of syllable rule variable names to their values.
+#[derive(Default)]
+pub struct SyllableVars {
+    roots: SyllableRoots,
+    vars: BTreeMap<String, OrRule>,
+    reachable: HashSet<String>
+}
+
+impl SyllableVars {
+    /// Return the rule associated with a variable name if it exists, or otherwise None.
+    fn get(&self, var: &str) -> Option<&OrRule> {
+        match var {
+            "InitialSyllable" => Some(&self.roots.initial),
+            "MiddleSyllable" => Some(&self.roots.middle),
+            "TerminalSyllable" => Some(&self.roots.terminal),
+            "SingleSyllable" => Some(&self.roots.single),
+            _ => self.vars.get(var)
+        }
+    }
+}
+
 /// The four root rules of the syllable synthesis grammar. Rules are stored in
 /// sum-of-products form.
 #[derive(Default)]
-pub struct SyllableRoots {
+struct SyllableRoots {
     initial: OrRule,
     middle: OrRule,
     terminal: OrRule,
@@ -41,13 +63,6 @@ impl SyllableRoots {
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut OrRule> {
         [&mut self.initial, &mut self.middle, &mut self.terminal, &mut self.single].into_iter()
     }
-}
-
-/// A mapping of syllable rule variable names to their values.
-#[derive(Default)]
-pub struct SyllableVars {
-    vars: BTreeMap<String, OrRule>,
-    reachable: HashSet<String>
 }
 
 /// An AND node in the syllable synthesis grammar.
@@ -140,12 +155,48 @@ impl Default for LeafRule {
 /// Render contents of the 'synthesis' tab.
 pub fn draw_synthesis_tab(ui: &mut Ui, curr_lang: &mut Language) {
     ScrollArea::vertical().show(ui, |ui| {
+        draw_test_generator(ui, curr_lang);
+        ui.add_space(10.0);
         draw_graphemic_inventory(ui, curr_lang);
         ui.add_space(10.0);
         draw_syllable_rules(ui, curr_lang);
         ui.add_space(10.0);
         draw_syllable_counter(ui, curr_lang);
     });
+}
+
+fn draw_test_generator(ui: &mut Ui, curr_lang: &mut Language) {
+    ui.heading("Sample Generation");
+    ui.label("Use the buttons below to generate sample words using the current configuration.");
+    ui.add_space(5.0);
+    ui.horizontal(|ui| {
+        let err_text = "The word length probabilities do not add up to 100%";
+        let function_wgts = &curr_lang.syllable_wgts.0;
+        let content_wgts = &curr_lang.syllable_wgts.1;
+        let function_btn = ui.add_enabled(verify_weights(function_wgts), Button::new("Function Words"))
+            .on_disabled_hover_text(err_text);
+        let content_btn = ui.add_enabled(verify_weights(content_wgts), Button::new("Content Words"))
+            .on_disabled_hover_text(err_text);
+        if function_btn.clicked() || content_btn.clicked() {
+            let weights = if function_btn.clicked() { function_wgts } else { content_wgts };
+            let producer = || synthesize_morpheme(&curr_lang.syllable_vars, weights);
+            curr_lang.test_words = std::iter::repeat_with(producer)
+                .take(24) // 3 columns of 8
+                .map(|word| if !word.is_empty() { word } else { "(blank)".to_owned() })
+                .collect();
+            ui.close_menu();
+        }
+    });
+    if !curr_lang.test_words.is_empty() {
+        ui.add_space(5.0);
+        ui.group(|ui| {
+            ui.columns(3, |columns| {
+                for (i, word) in curr_lang.test_words.iter().enumerate() {
+                    columns[i % 3].label(word);
+                }
+            })
+        });
+    }
 }
 
 fn draw_graphemic_inventory(ui: &mut Ui, curr_lang: &mut Language) {
@@ -249,8 +300,8 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         ui.spacing_mut().interact_size.y = 20.0; // fix row height
         
         // remove vars that are both unreachable and empty
-        flag_reachable_vars(&curr_lang.syllable_roots, &mut curr_lang.syllable_vars);
-        let SyllableVars {vars, reachable} = &mut curr_lang.syllable_vars;
+        flag_reachable_vars(&mut curr_lang.syllable_vars);
+        let SyllableVars {roots, vars, reachable} = &mut curr_lang.syllable_vars;
         vars.retain(|var, rule| reachable.contains(var) || rule.head.head.initialized());
 
         // data updated by certain visited nodes
@@ -258,7 +309,6 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         let mut new_var = None; // set if a new variable is referenced
 
         // 4 root rules
-        let roots = &mut curr_lang.syllable_roots;
         for (name, rule) in SyllableRoots::names().zip(roots.iter_mut()) {
             ui.horizontal_wrapped(|ui| {
                 ui.monospace(format!("{} =", name));
@@ -432,9 +482,9 @@ fn draw_leaf_node(
 
 /// Perform a DFS through the syllable rules, starting at each of the root variables.
 /// Visited variables are stored in the set `vars.reachable`.
-fn flag_reachable_vars(roots: &SyllableRoots, vars: &mut SyllableVars) {
+fn flag_reachable_vars(vars: &mut SyllableVars) {
     vars.reachable.clear();
-    let mut stack: VecDeque<&OrRule> = roots.iter().collect();
+    let mut stack: VecDeque<&OrRule> = vars.roots.iter().collect();
     while let Some(next) = stack.pop_back() {
         next.iter()
             .flat_map(NonEmptyList::iter)
@@ -457,6 +507,55 @@ fn handle_delete(mode: SyllableEditMode, ui: &mut Ui, response: &Response) -> bo
     } else {
         false
     }
+}
+
+/// Generate and return a new morpheme using the given settings.
+fn synthesize_morpheme(vars: &SyllableVars, weights: &Vec<u16>) -> String {
+    let mut output = String::new();
+    let mut rng = thread_rng();
+    let num_syllables = 1 + WeightedIndex::new(weights)
+        .unwrap() // weights already sanitized by front end (don't do this for secure stuff!)
+        .sample(&mut rng);
+    if num_syllables == 1 {
+        synthesize_syllable(&vars.roots.single, vars, &mut output, &mut rng);
+    } else {
+        synthesize_syllable(&vars.roots.initial, vars, &mut output, &mut rng);
+        for _ in 0..num_syllables - 2 {
+            synthesize_syllable(&vars.roots.middle, vars, &mut output, &mut rng);
+        }
+        synthesize_syllable(&vars.roots.terminal, vars, &mut output, &mut rng);
+    }
+    output
+}
+
+/// Generate a syllable using the provided rule and append it to `output`.
+fn synthesize_syllable(rule: &OrRule, vars: &SyllableVars, output: &mut String, rng: &mut impl Rng) {
+    let or_clause = rule.iter().choose(rng).unwrap();
+    for rule in or_clause.iter() {
+        match rule {
+            LeafRule::Sequence(list, _) => {
+                for grapheme in list {
+                    output.push_str(grapheme.as_str());
+                }
+            }
+            LeafRule::Set(list, _) => {
+                if let Some(grapheme) = list.iter().choose(rng) {
+                    output.push_str(grapheme.as_str());
+                }
+            }
+            LeafRule::Variable(var) => {
+                if let Some(new_rule) = vars.get(var) {
+                    synthesize_syllable(new_rule, vars, output, rng);
+                }
+            }
+            LeafRule::Blank | LeafRule::Uninitialized => {}
+        }
+    }
+}
+
+/// Return true if the sum of a slice of weights equals 100, otherwise false.
+fn verify_weights(weights: &[u16]) -> bool {
+    weights.iter().sum::<u16>() == 100
 }
 
 fn int_field_1_to_100(value: &mut u8) -> DragValue {

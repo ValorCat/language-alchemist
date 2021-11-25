@@ -32,11 +32,11 @@ pub struct Language {
     lexicon: Lexicon,
 
     // synthesis tab
+    test_words: Vec<String>,
     graphemes: MasterGraphemeStorage,
     new_grapheme: String,
     max_syllables: (u8, u8),             // (function words, content words)
     syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)
-    syllable_roots: SyllableRoots,
     syllable_vars: SyllableVars,
     syllable_edit_mode: SyllableEditMode
 }

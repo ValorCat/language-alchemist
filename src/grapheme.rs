@@ -6,6 +6,19 @@ use eframe::egui::{Button, Color32, Frame, Id, Response, RichText, TextEdit, Ui,
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub struct Grapheme(String);
 
+impl Grapheme {
+    /// Get a reference to the grapheme as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Grapheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// A container that can hold graphemes. The container can set its own policies on
 /// ordering and duplicate permissability.
 pub trait GraphemeStorage {
@@ -121,7 +134,7 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> GraphemeInputField<'data
             self.graphemes.update(|grapheme| {
                 // invalid if there is a master list and the grapheme isn't in it
                 let invalid = self.master.map_or(false, |master| !master.contains(grapheme));
-                let text = RichText::new(&grapheme.0);
+                let text = RichText::new(grapheme.as_str());
                 let text = if !invalid { text } else { text.color(Color32::RED) };
                 let button = Button::new(text);
                 let button = if !self.small { button } else { button.small() };

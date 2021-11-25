@@ -5,7 +5,7 @@ An engine for procedurally generating conlangs and translations for conlangs. Wr
 This project is a work in progress. Many features are not fully implemented.
 
 ## Usage
-Requires Rust 2018 edition or later. Build and run with:
+Requires Rust 2021 edition or later. Build and run with:
 ```
 $ cargo run
 ```
