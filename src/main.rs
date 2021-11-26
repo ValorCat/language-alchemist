@@ -2,6 +2,7 @@ use std::fmt::{self, Debug, Display};
 use eframe::{egui, epi};
 use egui::{CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
+use serde::{Deserialize, Serialize};
 use crate::grapheme::MasterGraphemeStorage;
 use crate::lexicon::*;
 use crate::synthesis::*;
@@ -17,7 +18,8 @@ fn main() {
 }
 
 /// A constructed language.
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Language {
     // translate tab
     name: String,
@@ -27,18 +29,18 @@ pub struct Language {
     // lexicon tab
     allow_homonyms: bool,
     num_homonyms: u32,
-    lexicon_search: String,
-    lexicon_search_mode: LexiconSearchMode,
+    #[serde(skip)] lexicon_search: String,
+    #[serde(skip)] lexicon_search_mode: LexiconSearchMode,
     lexicon: Lexicon,
 
     // synthesis tab
-    test_words: Vec<String>,
+    #[serde(skip)] test_words: Vec<String>,
     graphemes: MasterGraphemeStorage,
-    new_grapheme: String,
+    #[serde(skip)] new_grapheme: String,
     max_syllables: (u8, u8),             // (function words, content words)
     syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)
     syllable_vars: SyllableVars,
-    syllable_edit_mode: SyllableEditMode
+    #[serde(skip)] syllable_edit_mode: SyllableEditMode
 }
 
 impl Language {
@@ -52,13 +54,13 @@ impl Language {
 }
 
 /// An instance of the application. Maintains the list of the languages as well as UI data.
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 struct Application {
-    languages: Vec<Language>,
     curr_lang_idx: Option<usize>,
-    curr_tab: Tab,
-    editing_name: bool,
-    lexicon_edit_win: Option<LexiconEditWindow>
+    languages: Vec<Language>,
+    #[serde(skip)] curr_tab: Tab,
+    #[serde(skip)] editing_name: bool,
+    #[serde(skip)] lexicon_edit_win: Option<LexiconEditWindow>
 }
 
 /// One of the four UI tabs at the top of the window.
@@ -84,13 +86,20 @@ impl epi::App for Application {
         "Language Alchemist"
     }
 
+    /// Called once before the first frame.
+    fn setup(&mut self, _ctx: &CtxRef, _frame: &mut epi::Frame<'_>, storage: Option<&dyn epi::Storage>) {
+        if let Some(storage) = storage {
+            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
+        }
+    }
+
+    /// Called on exit to save any state not marked with `#[serde(skip)]`.
+    /// Also automatically called every 30 seconds (as defined by `epi:App::auto_save_interval`).
+    fn save(&mut self, storage: &mut dyn epi::Storage) {
+        epi::set_value(storage, epi::APP_KEY, self);
+    }
+
     /// Called each frame to render the UI.
-    ///
-    /// # Arguments
-    ///
-    /// * `self` - The application instance, which stores the UI data.
-    /// * `ctx` - The application context, which manages I/O.
-    /// * `_frame` - The window and its surrounding context.
     fn update(&mut self, ctx: &CtxRef, _frame: &mut epi::Frame<'_>) {
         let Self {languages, curr_lang_idx, curr_tab, editing_name, lexicon_edit_win} = self;
 

@@ -1,14 +1,17 @@
 # Language Alchemist
-An engine for procedurally generating conlangs and translations for conlangs. Written in Rust with [`egui`](https://github.com/emilk/egui).
+An engine for procedurally generating conlangs and translations for conlangs. Written in Rust with the [`egui`](https://github.com/emilk/egui) graphics framework.
 
 ## Work in Progress
-This project is a work in progress. Many features are not fully implemented.
+This project is a work in progress. Many features are not fully implemented. Until version 1.0, beware that updates may invalidate your save files.
 
 ## Usage
 Requires Rust 2021 edition or later. Build and run with:
 ```
 $ cargo run
 ```
+
+## Save Files
+Save files are stored in a platform-specific location determined by the [`directories-next`](https://crates.io/crates/directories-next) crate: see [this function's documentation](https://docs.rs/directories-next/2.0.0/directories_next/struct.ProjectDirs.html#method.data_dir) for the location on your platform. When updating to a backwards-incompatible version, you must manually delete your old save files.
 
 ## Concept
 You can create multiple conlangs, each with a set of adjustable parameters pertaining to their lexical, orthographic, morphological, and syntactic features. Once you customize a language's features, you can ask the engine to provide translations for arbitrary text. The engine "fills in" unknown words by generating translations on the fly, according to the features you adjusted. Once a word is generated, it's saved to a lexicon so that the engine never produces different translations for the same input.

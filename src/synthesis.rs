@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use eframe::egui::{Button, Color32, DragValue, Grid, Label, Response, RichText, ScrollArea, Sense, TextEdit, TextStyle, Ui};
 use itertools::{EitherOrBoth::*, Itertools};
 use rand::{distributions::WeightedIndex, prelude::*};
+use serde::{Deserialize, Serialize};
 use crate::Language;
 use crate::grapheme::*;
 
@@ -18,7 +19,7 @@ impl Default for SyllableEditMode {
 }
 
 /// A mapping of syllable rule variable names to their values.
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct SyllableVars {
     roots: SyllableRoots,
     vars: BTreeMap<String, OrRule>,
@@ -40,7 +41,7 @@ impl SyllableVars {
 
 /// The four root rules of the syllable synthesis grammar. Rules are stored in
 /// sum-of-products form.
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 struct SyllableRoots {
     initial: OrRule,
     middle: OrRule,
@@ -72,7 +73,7 @@ type AndRule = NonEmptyList<LeafRule>;
 type OrRule = NonEmptyList<AndRule>;
 
 /// A Vec that is guaranteed to have at least one element.
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 struct NonEmptyList<T> {
     head: T,
     tail: Vec<T>
@@ -91,6 +92,7 @@ impl<T> NonEmptyList<T> {
 }
 
 /// A leaf node in the syllable synthesis grammar.
+#[derive(Deserialize, Serialize)]
 enum LeafRule {
     Uninitialized,
     Sequence(Vec<Grapheme>, String),

@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 use std::hash::Hash;
 use eframe::egui::{Button, Color32, Frame, Id, Response, RichText, TextEdit, Ui, Vec2, Widget};
+use serde::{Deserialize, Serialize};
 
 /// A grapheme or multigraph.
-#[derive(Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Grapheme(String);
 
 impl Grapheme {
