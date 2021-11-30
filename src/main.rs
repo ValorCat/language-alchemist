@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug, Display};
 use eframe::{egui, epi};
-use egui::{CtxRef, Key, TextEdit, Ui};
+use egui::{Button, CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
 use serde::{Deserialize, Serialize};
 use crate::grapheme::MasterGraphemeStorage;
@@ -190,17 +190,53 @@ fn draw_translate_tab(ui: &mut Ui, ctx: &CtxRef, curr_lang: &mut Language, editi
         }
     });
 
-    // draw input and output boxes
-    let input_text = &mut curr_lang.input_text;
-    let output_text = &mut curr_lang.output_text;
-
+    // draw input box
     ui.add_space(10.0);
-    ui.add(TextEdit::multiline(input_text).hint_text("Enter text to translate..."));
-    if ui.button("Translate").clicked() {
-        // todo run translation engine
-        *output_text = input_text.clone();
+    ui.add(TextEdit::multiline(&mut curr_lang.input_text)
+        .hint_text("Enter text to translate...")
+        .desired_width(ui.available_width() * 0.8));
+    
+    // draw translate button
+    ui.add_space(10.0);
+    let button = ui.add_enabled(is_config_valid(curr_lang), Button::new("Translate"))
+        .on_disabled_hover_text("This language's configuration contains errors.");
+    
+    // parse input, ignoring punctuation, and translate the rest
+    if button.clicked() {
+        curr_lang.output_text.clear();
+        let mut word_start = None;
+        for (i, chr) in curr_lang.input_text.char_indices() {
+            if chr.is_alphanumeric() {
+                // mark this as the start of the word if no start already exists
+                word_start.get_or_insert(i);
+            } else {
+                if let Some(start) = word_start.take() {
+                    curr_lang.output_text.push_str(translate_word(&curr_lang.input_text[start..i],
+                        &mut curr_lang.lexicon, &curr_lang.syllable_vars, &curr_lang.syllable_wgts));
+                }
+                curr_lang.output_text.push(chr);
+            }
+        }
+        if let Some(start) = word_start {
+            // translate and add trailing word if input doesn't end with a full stop
+            curr_lang.output_text.push_str(translate_word(&curr_lang.input_text[start..],
+                &mut curr_lang.lexicon, &curr_lang.syllable_vars, &curr_lang.syllable_wgts));
+        }
     }
 
+    // draw output box
     ui.add_space(10.0);
-    ui.add_enabled(false, TextEdit::multiline(output_text));
+    ui.group(|ui| {
+        ui.set_width(ui.available_width() * 0.8);
+        ui.label(&curr_lang.output_text);
+    });
+}
+
+/// Given an input word, translates it and updates the lexicon if the word
+/// hasn't been translated before.
+fn translate_word<'a>(word: &str, lexicon: &'a mut Lexicon, vars: &SyllableVars,
+    weights: &(Vec<u16>, Vec<u16>))
+-> &'a str {
+    let generate_new = || synthesize_morpheme(vars, &weights.1); // todo distinguish content and function weights
+    lexicon.entry(word.to_lowercase()).or_insert_with(generate_new)
 }

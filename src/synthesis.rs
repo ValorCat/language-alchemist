@@ -511,8 +511,13 @@ fn handle_delete(mode: SyllableEditMode, ui: &mut Ui, response: &Response) -> bo
     }
 }
 
+/// Return true if the synthesis configuration is in a valid state, otherwise false.
+pub fn is_config_valid(lang: &Language) -> bool {
+    verify_weights(&lang.syllable_wgts.0) && verify_weights(&lang.syllable_wgts.1)
+}
+
 /// Generate and return a new morpheme using the given settings.
-fn synthesize_morpheme(vars: &SyllableVars, weights: &Vec<u16>) -> String {
+pub fn synthesize_morpheme(vars: &SyllableVars, weights: &Vec<u16>) -> String {
     let mut output = String::new();
     let mut rng = thread_rng();
     let num_syllables = 1 + WeightedIndex::new(weights)
