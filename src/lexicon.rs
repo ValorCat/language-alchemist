@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use eframe::egui::{Button, Grid, Label, Layout, ScrollArea, Sense, TextEdit, Ui, Window, popup};
+use eframe::egui::{Button, Grid, Layout, ScrollArea, TextEdit, Ui, Window, popup};
 use crate::Language;
 
 pub type Lexicon = HashMap<String, String>;
@@ -50,14 +50,7 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
             ui.spacing_mut().item_spacing.y -= 10.0;
             
             // draw the table header
-            Grid::new("lexicon table header")
-                .min_col_width(100.0)
-                .show(ui, |ui| {
-                    ui.heading(&curr_lang.name);
-                    ui.heading("English");
-                    ui.end_row();
-            });
-    
+            ui.heading(format!("{} to {} Lexicon", &curr_lang.name, "English"));
             ui.separator();
     
             // draw the table body
@@ -66,8 +59,10 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
                 .min_col_width(100.0)
                 .show(ui, |ui| {
                     for (native, conlang) in curr_lang.lexicon.iter() {
-                        let conlang_lbl = ui.add(Label::new(conlang).sense(Sense::click()));
-                        let native_lbl = ui.add(Label::new(native).sense(Sense::click()));
+                        let conlang_lbl = ui.selectable_label(false, conlang)
+                            .on_hover_text("Click to modify");
+                        let native_lbl = ui.selectable_label(false, native)
+                            .on_hover_text("Click to modify");
                         if conlang_lbl.clicked() || native_lbl.clicked() {
                             *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
                         }
@@ -77,8 +72,7 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
         });
     });
 
-    ui.separator();
-    if ui.button("New Lexicon Entry").clicked() {
+    if ui.button("Add Manual Lexicon Entry").clicked() {
         *lexicon_edit_win = Some(LexiconEditWindow::new_entry());
     }
 
