@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use eframe::egui::{Button, Grid, Layout, ScrollArea, TextEdit, Ui, Window, popup};
+use eframe::egui::{Button, Grid, Layout, ScrollArea, TextEdit, Ui, Window, popup, Checkbox};
 use crate::Language;
 
 pub type Lexicon = HashMap<String, String>;
@@ -16,6 +16,15 @@ pub struct LexiconEditWindow {
 #[derive(PartialEq)]
 pub enum LexiconSearchMode { Native, Conlang }
 
+impl LexiconSearchMode {
+    fn matches(&self, native: &str, conlang: &str, search: &str) -> bool {
+        match self {
+            LexiconSearchMode::Native => native.contains(search),
+            LexiconSearchMode::Conlang => conlang.contains(search)
+        }
+    }
+}
+
 impl Default for LexiconSearchMode {
     fn default() -> Self {
         LexiconSearchMode::Native
@@ -28,8 +37,12 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
     ui.spacing_mut().item_spacing += (0.0, 10.0).into();
 
     let label = format!("Allow homonyms ({} currently)", curr_lang.num_homonyms);
-    let tooltip = "Homonyms are words with the same spelling or pronunciation, but different meanings. Natural languages often have many homonyms, but constructed languages rarely do to avoid confusion.";
-    ui.checkbox(&mut curr_lang.allow_homonyms, label).on_hover_text(tooltip);
+    let tooltip = "Homonyms are words with the same spelling or pronunciation, but different \
+        meanings. Natural languages often have many homonyms, but constructed languages rarely do \
+        to avoid confusion.";
+    ui.add_enabled(false, Checkbox::new(&mut curr_lang.allow_homonyms, label))
+        .on_hover_text(tooltip)
+        .on_disabled_hover_text("Not yet implemented");
     
     ui.separator();
 
@@ -59,14 +72,16 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
                 .min_col_width(100.0)
                 .show(ui, |ui| {
                     for (native, conlang) in curr_lang.lexicon.iter() {
-                        let conlang_lbl = ui.selectable_label(false, conlang)
-                            .on_hover_text("Click to modify");
-                        let native_lbl = ui.selectable_label(false, native)
-                            .on_hover_text("Click to modify");
-                        if conlang_lbl.clicked() || native_lbl.clicked() {
-                            *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
+                        if curr_lang.lexicon_search_mode.matches(native, conlang, &curr_lang.lexicon_search) {
+                            let conlang_lbl = ui.selectable_label(false, conlang)
+                                .on_hover_text("Click to modify");
+                            let native_lbl = ui.selectable_label(false, native)
+                                .on_hover_text("Click to modify");
+                            if conlang_lbl.clicked() || native_lbl.clicked() {
+                                *lexicon_edit_win = Some(LexiconEditWindow::edit_entry(native, &curr_lang.lexicon));
+                            }
+                            ui.end_row();
                         }
-                        ui.end_row();
                     }
             });
         });
