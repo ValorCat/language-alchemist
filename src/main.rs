@@ -87,7 +87,7 @@ impl epi::App for Application {
     }
 
     /// Called once before the first frame.
-    fn setup(&mut self, _ctx: &CtxRef, _frame: &mut epi::Frame<'_>, storage: Option<&dyn epi::Storage>) {
+    fn setup(&mut self, _ctx: &CtxRef, _frame: &epi::Frame, storage: Option<&dyn epi::Storage>) {
         if let Some(storage) = storage {
             *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
         }
@@ -100,7 +100,7 @@ impl epi::App for Application {
     }
 
     /// Called each frame to render the UI.
-    fn update(&mut self, ctx: &CtxRef, _frame: &mut epi::Frame<'_>) {
+    fn update(&mut self, ctx: &CtxRef, _frame: &epi::Frame) {
         let Self {languages, curr_lang_idx, curr_tab, editing_name, lexicon_edit_win} = self;
 
         // draw left panel
