@@ -113,11 +113,11 @@ impl LeafRule {
     /// `action` with the chosen option.
     fn menu(ui: &mut Ui, text: &str, action: impl FnOnce(LeafRule)) -> Response {
         ui.menu_button(text, |ui: &mut Ui| {
-            LeafRule::choices()
-                .find(|(name, _)| ui.button(*name).clicked())
-                .map(|(_, choice)| {
-                    action(choice());
-                    ui.close_menu();
+            let clicked = LeafRule::choices()
+                .find(|(name, _)| ui.button(*name).clicked());
+            if let Some((_, choice)) = clicked {
+                action(choice());
+                ui.close_menu();
                 });
         }).response
     }
@@ -345,7 +345,7 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         if let Some(new_var) = new_var {
             // we have to use all() instead of contains() because we're comparing &str to String
             if SyllableRoots::names().all(|s| *s != new_var) {
-                vars.entry(new_var.clone()).or_insert_with(Default::default);
+                vars.entry(new_var).or_insert_with(Default::default);
             }
         }
     });
@@ -517,7 +517,7 @@ pub fn is_config_valid(lang: &Language) -> bool {
 }
 
 /// Generate and return a new morpheme using the given settings.
-pub fn synthesize_morpheme(vars: &SyllableVars, weights: &Vec<u16>) -> String {
+pub fn synthesize_morpheme(vars: &SyllableVars, weights: &[u16]) -> String {
     let mut output = String::new();
     let mut rng = thread_rng();
     let num_syllables = 1 + WeightedIndex::new(weights)

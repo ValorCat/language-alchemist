@@ -93,7 +93,7 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
 
     // draw lexicon edit popup
     if let Some(edit_win) = lexicon_edit_win {
-        let request_close = edit_win.show(ui, &mut curr_lang.name, &mut curr_lang.lexicon);
+        let request_close = edit_win.show(ui, &curr_lang.name, &mut curr_lang.lexicon);
         if request_close {
             *lexicon_edit_win = None;
         }
@@ -102,7 +102,7 @@ pub fn draw_lexicon_tab(ui: &mut Ui, curr_lang: &mut Language, lexicon_edit_win:
 
 impl LexiconEditWindow {
     /// Create an instance of the edit window for modifying an existing entry.
-    pub fn edit_entry(curr_native_phrase: &String, lexicon: &Lexicon) -> LexiconEditWindow {
+    pub fn edit_entry(curr_native_phrase: &str, lexicon: &Lexicon) -> LexiconEditWindow {
         LexiconEditWindow {
             original_native_phrase: Some(curr_native_phrase.to_owned()),
             native_phrase: curr_native_phrase.to_owned(),
@@ -192,7 +192,7 @@ impl LexiconEditWindow {
 }
 
 /// Draw a button that deletes the active lexicon entry.
-fn draw_delete_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &String) -> bool {
+fn draw_delete_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &str) -> bool {
     let clicked = ui.button("Delete Entry").clicked();
     if clicked {
         lexicon.remove(orig_native_phrase);
@@ -201,11 +201,11 @@ fn draw_delete_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &Stri
 }
 
 /// Draw a button that updates the active lexicon entry.
-fn draw_apply_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &String, native_phrase: &String, conlang_phrase: &String, can_edit: bool) -> bool {
+fn draw_apply_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &str, native_phrase: &str, conlang_phrase: &str, can_edit: bool) -> bool {
     let button = Button::new("Apply Changes");
     let clicked = ui.add_enabled(can_edit, button).clicked();
     if clicked {
-        lexicon.insert(native_phrase.clone(), conlang_phrase.clone());
+        lexicon.insert(native_phrase.to_string(), conlang_phrase.to_string());
         if orig_native_phrase != native_phrase {
             lexicon.remove(orig_native_phrase);
         }
@@ -214,11 +214,11 @@ fn draw_apply_btn(ui: &mut Ui, lexicon: &mut Lexicon, orig_native_phrase: &Strin
 }
 
 /// Draw a button that adds the active entry to the lexicon.
-fn draw_new_btn(ui: &mut Ui, lexicon: &mut Lexicon, native_phrase: &String, conlang_phrase: &String, can_edit: bool) -> bool {
+fn draw_new_btn(ui: &mut Ui, lexicon: &mut Lexicon, native_phrase: &str, conlang_phrase: &str, can_edit: bool) -> bool {
     let button = Button::new("Add Entry");
     let clicked = ui.add_enabled(can_edit, button).clicked();
     if clicked {
-        lexicon.insert(native_phrase.clone(), conlang_phrase.clone());
+        lexicon.insert(native_phrase.to_string(), conlang_phrase.to_string());
     }
     clicked
 }
