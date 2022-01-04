@@ -4,19 +4,8 @@ use itertools::{EitherOrBoth::*, Itertools};
 use rand::{distributions::WeightedIndex, prelude::*};
 use serde::{Deserialize, Serialize};
 use crate::Language;
-use crate::grapheme::*;
-
-/// The edit mode for the syllable rules interface.
-#[derive(Copy, Clone, PartialEq)]
-pub enum SyllableEditMode {
-    View, Edit, Delete
-}
-
-impl Default for SyllableEditMode {
-    fn default() -> Self {
-        Self::View
-    }
-}
+use crate::grapheme::{GraphemeInputField, Grapheme, MasterGraphemeStorage};
+use crate::util::{EditMode, NonEmptyList};
 
 /// A mapping of syllable rule variable names to their values.
 #[derive(Default, Deserialize, Serialize)]
@@ -72,25 +61,6 @@ type AndRule = NonEmptyList<LeafRule>;
 /// An OR node in the syllable synthesis grammar.
 type OrRule = NonEmptyList<AndRule>;
 
-/// A Vec that is guaranteed to have at least one element.
-#[derive(Default, Deserialize, Serialize)]
-struct NonEmptyList<T> {
-    head: T,
-    tail: Vec<T>
-}
-
-impl<T> NonEmptyList<T> {
-    /// Create a new NonEmptyList with `head` as the first element.
-    fn new(head: T) -> Self {
-        Self { head, tail: vec![] }
-    }
-
-    /// Return an iterator over the elements of this list.
-    fn iter(&self) -> impl Iterator<Item = &T> {
-        std::iter::once(&self.head).chain(&self.tail)
-    }
-}
-
 /// A leaf node in the syllable synthesis grammar.
 #[derive(Deserialize, Serialize)]
 enum LeafRule {
@@ -118,7 +88,7 @@ impl LeafRule {
             if let Some((_, choice)) = clicked {
                 action(choice());
                 ui.close_menu();
-                });
+            }
         }).response
     }
 
@@ -291,11 +261,7 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
         graphemes. There are four types of syllables: initial, middle, terminal, and single (for words with \
         only one syllable). Each syllable type is generated based on the rules you define in this section.");
     ui.add_space(5.0);
-    ui.horizontal(|ui| {
-        ui.selectable_value(&mut curr_lang.syllable_edit_mode, SyllableEditMode::View, "View Mode");
-        ui.selectable_value(&mut curr_lang.syllable_edit_mode, SyllableEditMode::Edit, "Edit Mode");
-        ui.selectable_value(&mut curr_lang.syllable_edit_mode, SyllableEditMode::Delete, "Delete Mode");
-    });
+    EditMode::draw_mode_picker(ui, &mut curr_lang.syllable_edit_mode);
     ui.add_space(5.0);
     ui.group(|ui| {
         ui.set_width(ui.available_width());      // fill available width
@@ -352,7 +318,7 @@ fn draw_syllable_rules(ui: &mut Ui, curr_lang: &mut Language) {
 }
 
 fn draw_or_node(
-        rule: &mut OrRule, ui: &mut Ui, mode: SyllableEditMode, graphemes: &MasterGraphemeStorage,
+        rule: &mut OrRule, ui: &mut Ui, mode: EditMode, graphemes: &MasterGraphemeStorage,
         order: &mut usize, new_var: &mut Option<String>
 ) {
     // draw head node
@@ -371,7 +337,7 @@ fn draw_or_node(
     }
 
     // draw button to insert new OR clause
-    if mode == SyllableEditMode::Edit && rule.head.head.initialized() {
+    if mode == EditMode::Edit && rule.head.head.initialized() {
         ui.add_space(12.0);
         LeafRule::menu(ui, "OR...", |new_rule| rule.tail.push(AndRule::new(new_rule)));
     }
@@ -379,12 +345,12 @@ fn draw_or_node(
 
 /// Draw an AND rule node. Return true if it should be deleted.
 fn draw_and_node(
-    rule: &mut AndRule, ui: &mut Ui, mode: SyllableEditMode, graphemes: &MasterGraphemeStorage,
+    rule: &mut AndRule, ui: &mut Ui, mode: EditMode, graphemes: &MasterGraphemeStorage,
     order: &mut usize, new_var: &mut Option<String>
 ) -> bool {
     // draw button to insert node at beginning
-    if mode == SyllableEditMode::Edit && rule.head.initialized() {
-        LeafRule::menu(ui, "+", |new_rule| rule.tail.insert(0, std::mem::replace(&mut rule.head, new_rule)));
+    if mode.is_edit() && rule.head.initialized() {
+        LeafRule::menu(ui, "+", |new_rule| rule.prepend(new_rule));
     }
 
     // draw first node
@@ -399,7 +365,7 @@ fn draw_and_node(
     // draw remaining nodes
     // use indexed loop because we modify the list's length in the loop
     for i in 0..rule.tail.len() {
-        if mode == SyllableEditMode::Edit {
+        if mode.is_edit() {
             LeafRule::menu(ui, "+", |new_rule| rule.tail.insert(i, new_rule));
         } else {
             ui.label("+");
@@ -412,7 +378,7 @@ fn draw_and_node(
     }
 
     // draw button to insert node at end
-    if mode == SyllableEditMode::Edit && rule.head.initialized() {
+    if mode.is_edit() && rule.head.initialized() {
         LeafRule::menu(ui, "+", |new_rule| rule.tail.push(new_rule));
     }
 
@@ -421,13 +387,13 @@ fn draw_and_node(
 
 /// Draw a leaf rule node. Return true if it should be deleted.
 fn draw_leaf_node(
-    rule: &mut LeafRule, ui: &mut Ui, mode: SyllableEditMode, graphemes: &MasterGraphemeStorage,
+    rule: &mut LeafRule, ui: &mut Ui, mode: EditMode, graphemes: &MasterGraphemeStorage,
     order: &mut usize, new_var: &mut Option<String>
 ) -> bool {
     *order += 1; // increment for each leaf node visited
     match rule {
         LeafRule::Uninitialized => {
-            if mode == SyllableEditMode::Edit {
+            if mode.is_edit() {
                 LeafRule::menu(ui, "(click to set)", |new_rule| *rule = new_rule);
             } else {
                 ui.colored_label(Color32::RED, "(not set)");
@@ -438,8 +404,8 @@ fn draw_leaf_node(
             let response = ui.add(GraphemeInputField::new(string, input, *order)
                 .link(graphemes)
                 .small(true)
-                .allow_editing(mode == SyllableEditMode::Edit)
-                .interactable(mode != SyllableEditMode::Delete));
+                .allow_editing(mode.is_edit())
+                .interactable(!mode.is_delete()));
             handle_delete(mode, ui, &response)
         }
         LeafRule::Set(set, input) => {
@@ -448,14 +414,14 @@ fn draw_leaf_node(
                 ui.add(GraphemeInputField::new(set, input, *order)
                     .link(graphemes)
                     .small(true)
-                    .allow_editing(mode == SyllableEditMode::Edit)
-                    .interactable(mode != SyllableEditMode::Delete));
+                    .allow_editing(mode.is_edit())
+                    .interactable(!mode.is_delete()));
                 ui.label("}");
             }).response;
             handle_delete(mode, ui, &response)
         }
         LeafRule::Variable(input) => {
-            if mode == SyllableEditMode::Edit {
+            if mode.is_edit() {
                 let response = ui.add(TextEdit::singleline(input)
                     .text_style(TextStyle::Monospace)
                     .hint_text("Type...")
@@ -502,8 +468,8 @@ fn flag_reachable_vars(vars: &mut SyllableVars) {
 
 /// If in delete mode and the pointer is over the passed response, draw a red overlay
 /// over the contents. Return true if the user clicks on the overlay, or otherwise false.
-fn handle_delete(mode: SyllableEditMode, ui: &mut Ui, response: &Response) -> bool {
-    if mode == SyllableEditMode::Delete && response.hovered() {
+fn handle_delete(mode: EditMode, ui: &mut Ui, response: &Response) -> bool {
+    if mode.is_delete() && response.hovered() {
         ui.painter().rect_filled(response.rect.expand(2.0), 3.0, Color32::from_rgba_unmultiplied(255, 0, 0, 90));
         ui.interact(response.rect, response.id, Sense::click()).clicked()
     } else {

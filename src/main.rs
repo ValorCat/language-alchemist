@@ -3,13 +3,17 @@ use eframe::{egui, epi};
 use egui::{Button, CtxRef, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
 use serde::{Deserialize, Serialize};
+use crate::grammar::{GrammarRule, draw_grammar_tab};
 use crate::grapheme::MasterGraphemeStorage;
-use crate::lexicon::*;
-use crate::synthesis::*;
+use crate::lexicon::{LexiconSearchMode, Lexicon, LexiconEditWindow, draw_lexicon_tab};
+use crate::synthesis::{SyllableVars, draw_synthesis_tab, is_config_valid, synthesize_morpheme};
+use crate::util::EditMode;
 
+mod grammar;
 mod grapheme;
 mod lexicon;
 mod synthesis;
+mod util;
 
 fn main() {
     let app = Application::default();
@@ -40,7 +44,11 @@ pub struct Language {
     max_syllables: (u8, u8),             // (function words, content words)
     syllable_wgts: (Vec<u16>, Vec<u16>), // (function words, content words)
     syllable_vars: SyllableVars,
-    #[serde(skip)] syllable_edit_mode: SyllableEditMode
+    #[serde(skip)] syllable_edit_mode: EditMode,
+
+    // grammar tab
+    grammar_rules: Vec<GrammarRule>,
+    #[serde(skip)] grammar_edit_mode: EditMode
 }
 
 impl Language {
@@ -159,11 +167,12 @@ impl epi::App for Application {
                     Tab::Translate => draw_translate_tab(ui, ctx, curr_lang, editing_name),
                     Tab::Lexicon => draw_lexicon_tab(ui, curr_lang, lexicon_edit_win),
                     Tab::Synthesis => draw_synthesis_tab(ui, curr_lang),
-                    Tab::Grammar => {},
+                    Tab::Grammar => draw_grammar_tab(ui, curr_lang)
                 }
             } else {
                 ui.add_space(10.0);
                 ui.label("Select a language on the left, or create a new one.");
+                egui::global_dark_light_mode_buttons(ui);
                 egui::warn_if_debug_build(ui);
             }
         });
