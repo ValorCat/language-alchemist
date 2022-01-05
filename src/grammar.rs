@@ -98,9 +98,9 @@ pub struct GrammarRule {
 #[derive(Deserialize, Serialize)]
 struct FindPattern {
 	pattern: PatternType,
-	match_adjacent: bool, // also match all adjacent constituents of same type
-	match_optional: bool, // also match even if not present
-	match_contains: Vec<FindPattern>, // only match if these sub-constituents also match
+	multimatch: bool,           // also match all adjacent constituents of same type
+	optional: bool,             // also match even if not present
+	children: Vec<FindPattern>, // only match if these sub-constituents also match
     label: String
 }
 
@@ -109,17 +109,25 @@ type FindPatternId = (PatternType, bool, bool);
 
 impl FindPattern {
     fn new(pattern: PatternType) -> Self {
-        Self { pattern, match_adjacent: false, match_optional: false, match_contains: vec![], label: String::new() }
+        Self { pattern, multimatch: false, optional: false, children: vec![], label: String::new() }
     }
 
     /// Get the unique portion of this pattern.
     fn id(&self) -> FindPatternId {
-        (self.pattern.clone(), self.match_adjacent, self.match_optional)
+        (self.pattern.clone(), self.multimatch, self.optional)
+    }
+
+    /// Get an iterator over all the "find" patterns that are part of this pattern, including itself
+    /// and any deep match patterns.
+    fn patterns(&self) -> impl Iterator<Item = &FindPattern> {
+        std::iter::once(self).chain(&self.children)
     }
 
     /// Compute and save this node's label. It can be accessed later through the `self.label` field.
     fn compute_label(&mut self, counter: &mut HashMap<FindPatternId, (u32, u32)>) {
         self.label.clear();
+        
+        // add abbreviated type name
         match &self.pattern {
             PatternType::Phrase(ty) => self.label.push_str(ty.short_name()),
             PatternType::Word(ty) => self.label.push_str(ty.short_name()),
@@ -129,18 +137,32 @@ impl FindPattern {
                 self.label.push('"');
             }
         }
-        match (self.match_adjacent, self.match_optional) {
+
+        // add type modifiers (*, +, ?)
+        match (self.multimatch, self.optional) {
             (true, true) => self.label.push('*'),
             (true, false) => self.label.push('+'),
             (false, true) => self.label.push('?'),
             (false, false) => {}
         }
+
+        // add numeric identifier if there are multiple uses of this type
         if let Some((count, max)) = counter.get_mut(&self.id()) {
             if *max > 1 && count < max {
                 *count += 1;
                 self.label.push(' ');
                 self.label.push_str(&count.to_string());
             }
+        }
+
+        // add nested patterns in braces
+        if !self.children.is_empty() {
+            self.label.push_str(" { ");
+            for sub_pattern in &mut self.children {
+                sub_pattern.compute_label(counter);
+                self.label.push_str(&sub_pattern.label);
+            }
+            self.label.push_str(" }");
         }
     }
 }
@@ -201,13 +223,13 @@ fn draw_find_pattern(rule: &mut GrammarRule, ui: &mut Ui, mode: &EditMode) {
             }
         } else {
             // edit mode
-            changed |= draw_find_pattern_menu(ui, "+", |new_pattern| find_patterns.prepend(new_pattern));
+            changed |= draw_find_pattern_menu(ui, "+", |new| find_patterns.prepend(new));
             changed |= draw_find_node(&mut find_patterns.head, ui, mode);
             for i in 0..find_patterns.tail.len() {
-                changed |= draw_find_pattern_menu(ui, "+", |new_pattern| find_patterns.tail.insert(i, new_pattern));
+                changed |= draw_find_pattern_menu(ui, "+", |new| find_patterns.tail.insert(i, new));
                 changed |= draw_find_node(&mut find_patterns.tail[i], ui, mode);
             }
-            changed |= draw_find_pattern_menu(ui, "+", |new_pattern| find_patterns.tail.push(new_pattern));
+            changed |= draw_find_pattern_menu(ui, "+", |new| find_patterns.tail.push(new));
         }
     } else {
         // if pattern isn't set yet, draw the pattern selector
@@ -247,11 +269,19 @@ fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: &EditMode) -> bool 
                         }
                     }
                     ui.separator();
-                    let response1 = ui.checkbox(&mut node.match_adjacent, "Group Matching")
-                        .on_hover_text("Capture all adjacent elements of this type");
-                    let response2 = ui.checkbox(&mut node.match_optional, "Optional Matching")
-                        .on_hover_text("Match this rule even if this element is not present");
-                    changed |= response1.union(response2).changed();
+                    changed |= ui.checkbox(&mut node.multimatch, "Group Matching")
+                        .on_hover_text("Capture all adjacent elements of this type")
+                        .changed();
+                    changed |= ui.checkbox(&mut node.optional, "Optional Matching")
+                        .on_hover_text("Match this rule even if this element is not present")
+                        .changed();
+                    if !matches!(node.pattern, PatternType::Literal(_)) {
+                        ui.separator();
+                        for child_node in &mut node.children {
+                            changed |= draw_find_node(child_node, ui, mode);
+                        }
+                        changed |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
+                    }
                 });
             });
             changed
@@ -313,7 +343,7 @@ fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatte
 fn recompute_pattern_labels(rule: &mut GrammarRule) {
     if let Some(patterns) = &mut rule.find {
         let mut counter = HashMap::with_capacity(patterns.len());
-        for node in patterns.iter() {
+        for node in patterns.iter().flat_map(FindPattern::patterns) {
             counter.entry(node.id())
                 .and_modify(|(_, max)| *max += 1)
                 .or_insert((0u32, 1u32));
