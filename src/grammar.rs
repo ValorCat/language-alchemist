@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use eframe::egui::{Color32, Frame, ScrollArea, Ui, Vec2};
+use eframe::egui::{Color32, Frame, RichText, ScrollArea, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use crate::Language;
 use crate::util::{EditMode, NonEmptyList};
@@ -222,7 +222,7 @@ fn draw_find_pattern(rule: &mut GrammarRule, ui: &mut Ui, mode: &EditMode) {
 
 /// Render one element in a "find" pattern. Return true if any part of the node was changed.
 fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: &EditMode) -> bool {
-    let text = &node.label;
+    let text = RichText::new(&node.label).monospace();
     match mode {
         EditMode::View => {
             let _ = ui.button(text);
@@ -232,18 +232,26 @@ fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: &EditMode) -> bool 
             let mut changed = false;
             ui.menu_button(text, |ui| {
                 Frame::none().margin(Vec2::splat(6.0)).show(ui, |ui| {
-                    let full_name = match &node.pattern {
-                        PatternType::Phrase(ty) => ty.name().to_owned(),
-                        PatternType::Word(ty) => ty.name().to_owned(),
-                        PatternType::Literal(word) => format!("Literal \"{}\"", word)
-                    };
-                    ui.label(full_name);
+                    match &mut node.pattern {
+                        PatternType::Phrase(ty) => {
+                            ui.label(ty.name());
+                        }
+                        PatternType::Word(ty) => {
+                            ui.label(ty.name());
+                        }
+                        PatternType::Literal(word) => {
+                            ui.horizontal(|ui| {
+                                ui.label("Exact Word: ");
+                                changed |= ui.text_edit_singleline(word).changed();
+                            });
+                        }
+                    }
                     ui.separator();
                     let response1 = ui.checkbox(&mut node.match_adjacent, "Group Matching")
                         .on_hover_text("Capture all adjacent elements of this type");
                     let response2 = ui.checkbox(&mut node.match_optional, "Optional Matching")
                         .on_hover_text("Match this rule even if this element is not present");
-                    changed = response1.union(response2).changed();
+                    changed |= response1.union(response2).changed();
                 });
             });
             changed
@@ -285,9 +293,9 @@ fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatte
             }
         }
         ui.separator();
-        if ui.button("Literal Word").clicked() {
+        if ui.button("Exact Word").clicked() {
             ui.close_menu();
-            return Some(PatternType::Literal(String::new()));
+            return Some(PatternType::Literal("word".to_owned()));
         }
         None
     });
