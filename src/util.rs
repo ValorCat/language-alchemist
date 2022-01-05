@@ -14,6 +14,11 @@ impl<T> NonEmptyList<T> {
         Self { head, tail: vec![] }
     }
 
+    /// Return the number of elements in the list.
+    pub fn len(&self) -> usize {
+        self.tail.len() + 1
+    }
+
     /// Return an iterator over the elements of this list.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         std::iter::once(&self.head).chain(&self.tail)
