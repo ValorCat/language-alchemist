@@ -7,11 +7,11 @@ use crate::util::{EditMode, NonEmptyList};
 
 /// A word in the input text.
 #[derive(Deserialize, Serialize)]
-struct Word(String, WordType); // todo add Vec<WordAttribute>
+pub struct Word(String, WordType); // todo add Vec<WordAttribute>
 
 /// A word type, roughly analogous to a part of speech, but simplified to support arbitrary languages.
 #[derive(Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
-enum WordType {
+pub enum WordType {
     Adposition, Conjunction, Determiner, Noun, NounModifier, Pronoun, Verb, VerbModifier
 }
 
@@ -50,7 +50,7 @@ impl WordType {
     }
 }
 
-// enum Constituent {
+// pub enum Constituent {
 //     Phrase(PhraseType, Vec<Constituent>),
 //     Word(Word)
 // }
@@ -58,7 +58,7 @@ impl WordType {
 /// A phrase type, roughly analogous to a constituent type in linguistic syntax. A phrase is composed
 /// of words and other phrases.
 #[derive(Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
-enum PhraseType {
+pub enum PhraseType {
     Action, Argument, Clause, /*Conjunction,*/ Relation
 }
 
@@ -88,15 +88,14 @@ impl PhraseType {
 
 /// A rule in a language's grammar, which maps a "find pattern" to a "replace pattern".
 /// Analagous to a production in a context-sensitive grammar.
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct GrammarRule {
-	find: Option<NonEmptyList<FindPattern>>,
-	replace: Vec<ReplacePattern>,
-	description: String
+    find: NonEmptyList<FindPattern>,
+    replace: Option<NonEmptyList<ReplacePattern>>
 }
 
 #[derive(Deserialize, Serialize)]
-struct FindPattern {
+pub struct FindPattern {
 	pattern: PatternType,
 	multimatch: bool,           // also match all adjacent constituents of same type
 	optional: bool,             // also match even if not present
@@ -168,15 +167,14 @@ impl FindPattern {
 }
 
 #[derive(Deserialize, Serialize)]
-enum ReplacePattern {
-	Capture(PatternType, usize), // e.g. "Pronoun #4"
-	OtherWord(Word),
+pub enum ReplacePattern {
+	Capture(usize), // e.g. "Pronoun #4"
 	Literal(String)
 }
 
 /// The type of one element in a find pattern or a replace pattern.
 #[derive(Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
-enum PatternType {
+pub enum PatternType {
 	Phrase(PhraseType),
 	Word(WordType),
 	Literal(String)
@@ -195,7 +193,7 @@ pub fn draw_grammar_tab(ui: &mut Ui, curr_lang: &mut Language) {
             for (i, rule) in curr_lang.grammar_rules.iter_mut().enumerate() {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(format!("{}.", i + 1));
-                    draw_find_pattern(rule, ui, mode);
+                    draw_rule(rule, ui, mode);
                 });
                 ui.add_space(3.0);
             }
@@ -204,42 +202,73 @@ pub fn draw_grammar_tab(ui: &mut Ui, curr_lang: &mut Language) {
                     ui.add_space(7.0);
                 }
                 if ui.button("Add Rule").clicked() {
-                    curr_lang.grammar_rules.push(Default::default());
+                    curr_lang.grammar_rules.push(None);
                 }
             }
         });
     });
 }
 
+/// Render the find and replace patterns for a grammar rule.
+fn draw_rule(rule: &mut Option<GrammarRule>, ui: &mut Ui, mode: &EditMode) {
+    match rule {
+        None => {
+            // no find pattern has been set yet
+            draw_find_node_selector(ui, mode, |new| {
+                let mut new_rule = GrammarRule { find: NonEmptyList::new(new), replace: None };
+                recompute_pattern_labels(&mut new_rule);
+                *rule = Some(new_rule);
+            });
+        }
+        Some(rule) => {
+            // we have a find pattern
+            if draw_find_patterns(&mut rule.find, ui, mode) {
+                recompute_pattern_labels(rule);
+            }
+            ui.label("->");
+            let find = &mut rule.find;
+            match &mut rule.replace {
+                None => {
+                    if mode.is_edit() {
+                        draw_replace_node_selector(ui, mode, find, |new|
+                            rule.replace = Some(NonEmptyList::new(new)));
+                    } else {
+                        ui.colored_label(Color32::RED, "(not set)");
+                    }
+                }
+                Some(replace) => {
+                    draw_replace_patterns(find, replace, ui, mode);
+                }
+            }
+        }
+    }
+}
+
 /// Render the "find" portion of a grammar rule.
-fn draw_find_pattern(rule: &mut GrammarRule, ui: &mut Ui, mode: &EditMode) {
+fn draw_find_patterns(patterns: &mut NonEmptyList<FindPattern>, ui: &mut Ui, mode: &EditMode) -> bool {
     let mut changed = false;
-    if let Some(find_patterns) = &mut rule.find {
-        if !mode.is_edit() {
-            // view and delete modes
-            changed |= draw_find_node(&mut find_patterns.head, ui, mode);
-            for node in &mut find_patterns.tail {
-                changed |= draw_find_node(node, ui, mode);
-            }
-        } else {
-            // edit mode
-            changed |= draw_find_pattern_menu(ui, "+", |new| find_patterns.prepend(new));
-            changed |= draw_find_node(&mut find_patterns.head, ui, mode);
-            for i in 0..find_patterns.tail.len() {
-                changed |= draw_find_pattern_menu(ui, "+", |new| find_patterns.tail.insert(i, new));
-                changed |= draw_find_node(&mut find_patterns.tail[i], ui, mode);
-            }
-            changed |= draw_find_pattern_menu(ui, "+", |new| find_patterns.tail.push(new));
+    if !mode.is_edit() {
+        // view and delete modes
+        changed |= draw_find_node(&mut patterns.head, ui, mode);
+        for node in &mut patterns.tail {
+            changed |= draw_find_node(node, ui, mode);
         }
     } else {
-        // if pattern isn't set yet, draw the pattern selector
-        changed |= draw_find_node_selector(ui, mode, |new_type| rule.find = Some(NonEmptyList::new(new_type)));
+        // edit mode
+        changed |= draw_find_pattern_menu(ui, "+", |new| patterns.prepend(new));
+        changed |= draw_find_node(&mut patterns.head, ui, mode);
+        for i in 0..patterns.tail.len() {
+            changed |= draw_find_pattern_menu(ui, "+", |new| patterns.tail.insert(i, new));
+            changed |= draw_find_node(&mut patterns.tail[i], ui, mode);
+        }
+        changed |= draw_find_pattern_menu(ui, "+", |new| patterns.tail.push(new));
     }
-    if changed {
-        // if any part of this rule was changed, recompute all the labels
-        // this ensures the numbering remains correct even when nodes are rearranged
-        recompute_pattern_labels(rule);
-    }
+    changed
+}
+
+/// Render the "replace" portion of a rule.
+fn draw_replace_patterns(_find: &NonEmptyList<FindPattern>, _replace: &mut NonEmptyList<ReplacePattern>, _ui: &mut Ui, _mode: &EditMode) {
+    
 }
 
 /// Render one element in a "find" pattern. Return true if any part of the node was changed.
@@ -298,9 +327,21 @@ fn draw_find_node_selector(ui: &mut Ui, mode: &EditMode, on_select: impl FnOnce(
             ui.colored_label(Color32::RED, "(not set)");
             false
         }
-        EditMode::Edit => {
-            draw_find_pattern_menu(ui, "(click to set)", on_select)
+        EditMode::Edit => draw_find_pattern_menu(ui, "(click to set)", on_select),
+        EditMode::Delete => todo!()
+    }
+}
+
+/// Render the "replace" pattern dropdown for a new rule. If an item is selected, the provided `on_select`
+/// function is called with a new `FindPattern` as the argument.
+fn draw_replace_node_selector(ui: &mut Ui, mode: &EditMode, find_patterns: &NonEmptyList<FindPattern>,
+    on_select: impl FnOnce(ReplacePattern))
+{
+    match mode {
+        EditMode::View => {
+            ui.colored_label(Color32::RED, "(not set)");
         }
+        EditMode::Edit => draw_replace_pattern_menu(ui, "(click to set)", find_patterns, on_select),
         EditMode::Delete => todo!()
     }
 }
@@ -329,11 +370,36 @@ fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatte
         }
         None
     });
-    if let Some(pattern_type) = response.inner.flatten() {
-        action(FindPattern::new(pattern_type));
-        true
-    } else {
-        false
+    response.inner.flatten()
+        .map(|new| action(FindPattern::new(new)))
+        .is_some()
+}
+
+/// Render a "replace" pattern dropdown. If an item is selected, the provided `on_select` function is
+/// called with a new `FindPattern` as the argument.
+fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &NonEmptyList<FindPattern>,
+    action: impl FnOnce(ReplacePattern))
+{
+    let response = ui.menu_button(text, |ui| {
+        for (i, patt) in choices.iter()
+            .flat_map(FindPattern::patterns)
+            .map(|patt| &patt.label)
+            .enumerate()
+        {
+            if ui.button(patt).clicked() {
+                ui.close_menu();
+                return Some(ReplacePattern::Capture(i));
+            }
+        }
+        ui.separator();
+        if ui.button("Exact Word").clicked() {
+            ui.close_menu();
+            return Some(ReplacePattern::Literal("word".to_owned()));
+        }
+        None
+    });
+    if let Some(new) = response.inner.flatten() {
+        action(new);
     }
 }
 
@@ -341,15 +407,14 @@ fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatte
 /// called whenever the order of the nodes changes, or when some part of a node changes
 /// that is reflected in its label.
 fn recompute_pattern_labels(rule: &mut GrammarRule) {
-    if let Some(patterns) = &mut rule.find {
-        let mut counter = HashMap::with_capacity(patterns.len());
-        for node in patterns.iter().flat_map(FindPattern::patterns) {
-            counter.entry(node.id())
-                .and_modify(|(_, max)| *max += 1)
-                .or_insert((0u32, 1u32));
-        }
-        for node in patterns.iter_mut() {
-            node.compute_label(&mut counter);
-        }
+    let find_patterns = &mut rule.find;
+    let mut counter = HashMap::with_capacity(find_patterns.len());
+    for node in find_patterns.iter().flat_map(FindPattern::patterns) {
+        counter.entry(node.id())
+            .and_modify(|(_, max)| *max += 1)
+            .or_insert((0u32, 1u32));
+    }
+    for node in find_patterns.iter_mut() {
+        node.compute_label(&mut counter);
     }
 }

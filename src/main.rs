@@ -47,7 +47,7 @@ pub struct Language {
     #[serde(skip)] syllable_edit_mode: EditMode,
 
     // grammar tab
-    grammar_rules: Vec<GrammarRule>,
+    grammar_rules: Vec<Option<GrammarRule>>,
     #[serde(skip)] grammar_edit_mode: EditMode
 }
 
