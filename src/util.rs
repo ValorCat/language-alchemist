@@ -8,6 +8,7 @@ pub struct NonEmptyList<T> {
     pub tail: Vec<T>
 }
 
+#[allow(dead_code)]
 impl<T> NonEmptyList<T> {
     /// Create a new NonEmptyList with `head` as the first element.
     pub fn new(head: T) -> Self {
@@ -25,7 +26,6 @@ impl<T> NonEmptyList<T> {
     }
 
     /// Return a mutable iterator over the elements of this list.
-    #[allow(dead_code)]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         std::iter::once(&mut self.head).chain(&mut self.tail)
     }

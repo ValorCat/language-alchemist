@@ -3,7 +3,7 @@ use std::hash::Hash;
 use eframe::egui::{Color32, Frame, RichText, ScrollArea, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use crate::Language;
-use crate::util::{EditMode, NonEmptyList};
+use crate::util::EditMode;
 
 /// A word in the input text.
 #[derive(Deserialize, Serialize)]
@@ -90,8 +90,8 @@ impl PhraseType {
 /// Analagous to a production in a context-sensitive grammar.
 #[derive(Deserialize, Serialize)]
 pub struct GrammarRule {
-    find: NonEmptyList<FindPattern>,
-    replace: Option<NonEmptyList<ReplacePattern>>
+    find: Vec<FindPattern>,
+    replace: Vec<ReplacePattern>
 }
 
 #[derive(Deserialize, Serialize)]
@@ -215,7 +215,7 @@ fn draw_rule(rule: &mut Option<GrammarRule>, ui: &mut Ui, mode: &EditMode) {
         None => {
             // no find pattern has been set yet
             draw_find_node_selector(ui, mode, |new| {
-                let mut new_rule = GrammarRule { find: NonEmptyList::new(new), replace: None };
+                let mut new_rule = GrammarRule { find: vec![new], replace: vec![] };
                 recompute_pattern_labels(&mut new_rule);
                 *rule = Some(new_rule);
             });
@@ -227,47 +227,38 @@ fn draw_rule(rule: &mut Option<GrammarRule>, ui: &mut Ui, mode: &EditMode) {
             }
             ui.label("->");
             let find = &mut rule.find;
-            match &mut rule.replace {
-                None => {
-                    if mode.is_edit() {
-                        draw_replace_node_selector(ui, mode, find, |new|
-                            rule.replace = Some(NonEmptyList::new(new)));
-                    } else {
-                        ui.colored_label(Color32::RED, "(not set)");
-                    }
-                }
-                Some(replace) => {
-                    draw_replace_patterns(find, replace, ui, mode);
-                }
+            if !rule.replace.is_empty() {
+                draw_replace_patterns(find, &mut rule.replace, ui, mode);
+            } else if mode.is_edit() {
+                draw_replace_node_selector(ui, mode, find, |new| rule.replace.push(new));
+            } else {
+                ui.colored_label(Color32::RED, "(not set)");
             }
         }
     }
 }
 
-/// Render the "find" portion of a grammar rule.
-fn draw_find_patterns(patterns: &mut NonEmptyList<FindPattern>, ui: &mut Ui, mode: &EditMode) -> bool {
+/// Render the "find" portion of a grammar rule. Return true if any nodes were changed.
+fn draw_find_patterns(patterns: &mut Vec<FindPattern>, ui: &mut Ui, mode: &EditMode) -> bool {
     let mut changed = false;
     if !mode.is_edit() {
         // view and delete modes
-        changed |= draw_find_node(&mut patterns.head, ui, mode);
-        for node in &mut patterns.tail {
+        for node in patterns.iter_mut() {
             changed |= draw_find_node(node, ui, mode);
         }
     } else {
         // edit mode
-        changed |= draw_find_pattern_menu(ui, "+", |new| patterns.prepend(new));
-        changed |= draw_find_node(&mut patterns.head, ui, mode);
-        for i in 0..patterns.tail.len() {
-            changed |= draw_find_pattern_menu(ui, "+", |new| patterns.tail.insert(i, new));
-            changed |= draw_find_node(&mut patterns.tail[i], ui, mode);
+        for i in 0..patterns.len() {
+            changed |= draw_find_pattern_menu(ui, "+", |new| patterns.insert(i, new));
+            changed |= draw_find_node(&mut patterns[i], ui, mode);
         }
-        changed |= draw_find_pattern_menu(ui, "+", |new| patterns.tail.push(new));
+        changed |= draw_find_pattern_menu(ui, "+", |new| patterns.push(new));
     }
     changed
 }
 
 /// Render the "replace" portion of a rule.
-fn draw_replace_patterns(_find: &NonEmptyList<FindPattern>, _replace: &mut NonEmptyList<ReplacePattern>, _ui: &mut Ui, _mode: &EditMode) {
+fn draw_replace_patterns(_find: &[FindPattern], _replace: &mut Vec<ReplacePattern>, _ui: &mut Ui, _mode: &EditMode) {
     
 }
 
@@ -334,7 +325,7 @@ fn draw_find_node_selector(ui: &mut Ui, mode: &EditMode, on_select: impl FnOnce(
 
 /// Render the "replace" pattern dropdown for a new rule. If an item is selected, the provided `on_select`
 /// function is called with a new `FindPattern` as the argument.
-fn draw_replace_node_selector(ui: &mut Ui, mode: &EditMode, find_patterns: &NonEmptyList<FindPattern>,
+fn draw_replace_node_selector(ui: &mut Ui, mode: &EditMode, find_patterns: &[FindPattern],
     on_select: impl FnOnce(ReplacePattern))
 {
     match mode {
@@ -377,7 +368,7 @@ fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatte
 
 /// Render a "replace" pattern dropdown. If an item is selected, the provided `on_select` function is
 /// called with a new `FindPattern` as the argument.
-fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &NonEmptyList<FindPattern>,
+fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &[FindPattern],
     action: impl FnOnce(ReplacePattern))
 {
     let response = ui.menu_button(text, |ui| {
