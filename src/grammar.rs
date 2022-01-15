@@ -100,7 +100,8 @@ pub struct FindPattern {
 	multimatch: bool,           // also match all adjacent constituents of same type
 	optional: bool,             // also match even if not present
 	children: Vec<FindPattern>, // only match if these sub-constituents also match
-    label: String
+    label: String,
+    short_label_len: usize      // label size before any nested labels
 }
 
 // The unique portion of a FindPattern, used for equality checking and hashing.
@@ -108,7 +109,7 @@ type FindPatternId = (PatternType, bool, bool);
 
 impl FindPattern {
     fn new(pattern: PatternType) -> Self {
-        Self { pattern, multimatch: false, optional: false, children: vec![], label: String::new() }
+        Self { pattern, multimatch: false, optional: false, children: vec![], label: String::new(), short_label_len: 0 }
     }
 
     /// Get the unique portion of this pattern.
@@ -118,8 +119,11 @@ impl FindPattern {
 
     /// Get an iterator over all the "find" patterns that are part of this pattern, including itself
     /// and any deep match patterns.
-    fn patterns(&self) -> impl Iterator<Item = &FindPattern> {
-        std::iter::once(self).chain(&self.children)
+    fn subtree(this: &FindPattern) -> Box<dyn Iterator<Item = &FindPattern> + '_> {
+        Box::new(
+            std::iter::once(this) // root node
+            .chain(this.children.iter().flat_map(FindPattern::subtree)) // child nodes
+        )
     }
 
     /// Compute and save this node's label. It can be accessed later through the `self.label` field.
@@ -153,6 +157,9 @@ impl FindPattern {
                 self.label.push_str(&count.to_string());
             }
         }
+
+        // short label ends here
+        self.short_label_len = self.label.len();
 
         // add nested patterns in braces
         if !self.children.is_empty() {
@@ -324,7 +331,7 @@ fn draw_find_node_selector(ui: &mut Ui, mode: &EditMode, on_select: impl FnOnce(
 }
 
 /// Render the "replace" pattern dropdown for a new rule. If an item is selected, the provided `on_select`
-/// function is called with a new `FindPattern` as the argument.
+/// function is called with a new `ReplacePattern` as the argument.
 fn draw_replace_node_selector(ui: &mut Ui, mode: &EditMode, find_patterns: &[FindPattern],
     on_select: impl FnOnce(ReplacePattern))
 {
@@ -367,19 +374,15 @@ fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatte
 }
 
 /// Render a "replace" pattern dropdown. If an item is selected, the provided `on_select` function is
-/// called with a new `FindPattern` as the argument.
+/// called with a new `ReplacePattern` as the argument.
 fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &[FindPattern],
     action: impl FnOnce(ReplacePattern))
 {
     let response = ui.menu_button(text, |ui| {
-        for (i, patt) in choices.iter()
-            .flat_map(FindPattern::patterns)
-            .map(|patt| &patt.label)
-            .enumerate()
-        {
-            if ui.button(patt).clicked() {
+        for node in choices.iter().flat_map(FindPattern::subtree) {
+            if ui.button(&node.label[..node.short_label_len]).clicked() {
                 ui.close_menu();
-                return Some(ReplacePattern::Capture(i));
+                return Some(ReplacePattern::Capture(0));
             }
         }
         ui.separator();
@@ -400,7 +403,7 @@ fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &[FindPattern],
 fn recompute_pattern_labels(rule: &mut GrammarRule) {
     let find_patterns = &mut rule.find;
     let mut counter = HashMap::with_capacity(find_patterns.len());
-    for node in find_patterns.iter().flat_map(FindPattern::patterns) {
+    for node in find_patterns.iter().flat_map(FindPattern::subtree) {
         counter.entry(node.id())
             .and_modify(|(_, max)| *max += 1)
             .or_insert((0u32, 1u32));
