@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::hash::Hash;
-use eframe::egui::{Button, Color32, Frame, Id, Response, RichText, TextEdit, Ui, Vec2, Widget};
+use eframe::egui::{Button, Color32, Frame, Id, Margin, Response, RichText, TextEdit, Ui, Widget};
 use serde::{Deserialize, Serialize};
 
 /// A grapheme or multigraph.
@@ -202,12 +202,10 @@ impl<'data, 'buffer, 'master, Storage: GraphemeStorage> Widget
             self.show_contents(ui)
         } else {
             // draw within a frame
-            Frame {
-                margin: Vec2::splat(if self.small { 0.0 } else { 6.0 }),
-                ..Frame::group(ui.style())
-            }.show(ui, |ui| {
-                self.show_contents(ui)
-            }).response
+            Frame::group(ui.style())
+                .inner_margin(Margin::same(if self.small { 0.0 } else { 6.0 }))
+                .show(ui, |ui| self.show_contents(ui))
+                .response
         }
     }
 }

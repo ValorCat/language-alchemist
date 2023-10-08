@@ -423,7 +423,7 @@ fn draw_leaf_node(
         LeafRule::Variable(input) => {
             if mode.is_edit() {
                 let response = ui.add(TextEdit::singleline(input)
-                    .text_style(TextStyle::Monospace)
+                    .font(TextStyle::Monospace)
                     .hint_text("Type...")
                     .desired_width(80.0));
                 if response.changed() && !input.is_empty() {

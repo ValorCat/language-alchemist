@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug, Display};
-use eframe::{egui, epi};
-use egui::{Button, CtxRef, Key, TextEdit, Ui};
+use eframe::egui;
+use egui::{Button, Context, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
 use serde::{Deserialize, Serialize};
 use crate::grammar::{GrammarRule, draw_grammar_tab};
@@ -15,10 +15,12 @@ mod lexicon;
 mod synthesis;
 mod util;
 
-fn main() {
-    let app = Application::default();
-    let native_options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(app), native_options);
+fn main() -> eframe::Result<()> {
+    eframe::run_native(
+        "Language Alchemist",
+        Default::default(),
+        Box::new(|cc| Box::new(Application::new(cc)))
+    )
 }
 
 /// A constructed language.
@@ -71,14 +73,23 @@ struct Application {
     #[serde(skip)] lexicon_edit_win: Option<LexiconEditWindow>
 }
 
-/// One of the four UI tabs at the top of the window.
-#[derive(Clone, Debug, PartialEq)]
-enum Tab { Translate, Lexicon, Synthesis, Grammar }
-
-impl Default for Tab {
-    fn default() -> Self {
-        Tab::Translate
+impl Application {
+    fn new(cc: &eframe::CreationContext) -> Self {
+        if let Some(storage) = cc.storage {
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+        } else {
+            Default::default()
+        }
     }
+}
+
+/// One of the four UI tabs at the top of the window.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum Tab {
+    #[default] Translate,
+    Lexicon,
+    Synthesis,
+    Grammar
 }
 
 // implement to_string() so we don't have to repeat the tab names
@@ -88,27 +99,15 @@ impl Display for Tab {
     }
 }
 
-impl epi::App for Application {
-    /// Get the name of the application and title of the main window.
-    fn name(&self) -> &str {
-        "Language Alchemist"
-    }
-
-    /// Called once before the first frame.
-    fn setup(&mut self, _ctx: &CtxRef, _frame: &epi::Frame, storage: Option<&dyn epi::Storage>) {
-        if let Some(storage) = storage {
-            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-        }
-    }
-
+impl eframe::App for Application {
     /// Called on exit to save any state not marked with `#[serde(skip)]`.
     /// Also automatically called every 30 seconds (as defined by `epi:App::auto_save_interval`).
-    fn save(&mut self, storage: &mut dyn epi::Storage) {
-        epi::set_value(storage, epi::APP_KEY, self);
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
     /// Called each frame to render the UI.
-    fn update(&mut self, ctx: &CtxRef, _frame: &epi::Frame) {
+    fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         let Self {languages, curr_lang_idx, curr_tab, editing_name, lexicon_edit_win} = self;
 
         // draw left panel
@@ -180,15 +179,15 @@ impl epi::App for Application {
 }
 
 /// Render contents of the 'translate' tab.
-fn draw_translate_tab(ui: &mut Ui, ctx: &CtxRef, curr_lang: &mut Language, editing_name: &mut bool) {
+fn draw_translate_tab(ui: &mut Ui, ctx: &Context, curr_lang: &mut Language, editing_name: &mut bool) {
     // draw name and 'rename' button
     ui.horizontal(|ui| {
         if *editing_name {
             let text_field = TextEdit::singleline(&mut curr_lang.name)
-                .text_style(egui::TextStyle::Heading);
+                .font(egui::TextStyle::Heading);
             let response = ui.add(text_field);
             response.request_focus();
-            if response.lost_focus() || response.clicked_elsewhere() || ctx.input().key_pressed(Key::Enter) {
+            if response.lost_focus() || response.clicked_elsewhere() || ctx.input(|i| i.key_pressed(Key::Enter)) {
                 *editing_name = false;
             }
         } else {

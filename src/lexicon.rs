@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use eframe::egui::{Button, Grid, Layout, ScrollArea, TextEdit, Ui, Window, popup, Checkbox};
+use eframe::egui::{Align, Button, Checkbox, Grid, Layout, ScrollArea, TextEdit, Ui, Window, popup};
 use crate::Language;
 
 pub type Lexicon = HashMap<String, String>;
@@ -13,8 +13,11 @@ pub struct LexiconEditWindow {
 }
 
 /// The toggleable mode for the lexicon search field.
-#[derive(PartialEq)]
-pub enum LexiconSearchMode { Native, Conlang }
+#[derive(Default, PartialEq)]
+pub enum LexiconSearchMode {
+    #[default] Native,
+    Conlang
+}
 
 impl LexiconSearchMode {
     fn matches(&self, native: &str, conlang: &str, search: &str) -> bool {
@@ -22,12 +25,6 @@ impl LexiconSearchMode {
             LexiconSearchMode::Native => native.contains(search),
             LexiconSearchMode::Conlang => conlang.contains(search)
         }
-    }
-}
-
-impl Default for LexiconSearchMode {
-    fn default() -> Self {
-        LexiconSearchMode::Native
     }
 }
 
@@ -155,13 +152,13 @@ impl LexiconEditWindow {
     /// Return a function that can be passed to Grid::show() to draw the lexicon editing text fields.
     fn draw_edit_fields<'a>(&'a mut self, conlang_name: &'a str, lexicon: &'a mut Lexicon) -> impl FnOnce(&mut Ui) + 'a {
         move |ui| {
-            ui.with_layout(Layout::right_to_left(), |ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(format!("{}:", conlang_name));
             });
             ui.text_edit_singleline(&mut self.conlang_phrase);
             ui.end_row();
     
-            ui.with_layout(Layout::right_to_left(), |ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label("English:");
             });
             let native_input = ui.text_edit_singleline(&mut self.native_phrase);
@@ -171,12 +168,12 @@ impl LexiconEditWindow {
                 self.overwrite_warning = lexicon.get(&self.native_phrase)
                     .map(|curr_word| format!("Already mapped to <{}>", curr_word));
                 if self.overwrite_warning.is_none() {
-                    ui.memory().close_popup();
+                    ui.memory_mut(|mem| mem.close_popup());
                 }
             }
             if let Some(warning) = &self.overwrite_warning {
                 let warning_id = ui.make_persistent_id("lexicon warning");
-                ui.memory().open_popup(warning_id);
+                ui.memory_mut(|mem| mem.open_popup(warning_id));
                 popup::popup_below_widget(ui, warning_id, &native_input, |ui| {
                     ui.set_min_width(100.0);
                     ui.label(warning);
