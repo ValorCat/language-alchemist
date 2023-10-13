@@ -1,4 +1,4 @@
-use eframe::egui::Ui;
+use eframe::egui::{Color32, Response, Sense, Ui};
 use serde::{Deserialize, Serialize};
 
 /// A Vec that is guaranteed to have at least one element.
@@ -72,5 +72,16 @@ impl EditMode {
     /// Returns `true` if the edit mode is `Delete`.
     pub fn is_delete(&self) -> bool {
         matches!(self, Self::Delete)
+    }
+}
+
+/// If in delete mode and the pointer is over the passed response, draw a red overlay
+/// over the contents. Return true if the user clicks on the overlay, or otherwise false.
+pub fn handle_delete_mode(mode: EditMode, ui: &mut Ui, response: &Response) -> bool {
+    if mode.is_delete() && response.hovered() {
+        ui.painter().rect_filled(response.rect.expand(2.0), 3.0, Color32::from_rgba_unmultiplied(255, 0, 0, 90));
+        ui.interact(response.rect, response.id, Sense::click()).clicked()
+    } else {
+        false
     }
 }

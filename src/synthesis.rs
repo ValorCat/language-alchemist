@@ -5,7 +5,7 @@ use rand::{distributions::WeightedIndex, prelude::*};
 use serde::{Deserialize, Serialize};
 use crate::Language;
 use crate::grapheme::{GraphemeInputField, Grapheme, MasterGraphemeStorage};
-use crate::util::{EditMode, NonEmptyList};
+use crate::util::{EditMode, NonEmptyList, handle_delete_mode};
 
 /// A mapping of syllable rule variable names to their values.
 #[derive(Default, Deserialize, Serialize)]
@@ -406,7 +406,7 @@ fn draw_leaf_node(
                 .small(true)
                 .allow_editing(mode.is_edit())
                 .interactable(!mode.is_delete()));
-            handle_delete(mode, ui, &response)
+            handle_delete_mode(mode, ui, &response)
         }
         LeafRule::Set(set, input) => {
             let response = ui.scope(|ui| {
@@ -418,7 +418,7 @@ fn draw_leaf_node(
                     .interactable(!mode.is_delete()));
                 ui.label("}");
             }).response;
-            handle_delete(mode, ui, &response)
+            handle_delete_mode(mode, ui, &response)
         }
         LeafRule::Variable(input) => {
             if mode.is_edit() {
@@ -438,12 +438,12 @@ fn draw_leaf_node(
                     RichText::new("(no variable given)").color(Color32::RED)
                 };
                 let response = ui.add(Label::new(text).sense(Sense::click()));
-                handle_delete(mode, ui, &response)
+                handle_delete_mode(mode, ui, &response)
             }
         }
         LeafRule::Blank => {
             let response = ui.add(Label::new("blank").sense(Sense::click()));
-            handle_delete(mode, ui, &response)
+            handle_delete_mode(mode, ui, &response)
         }
     }
 }
@@ -463,17 +463,6 @@ fn flag_reachable_vars(vars: &mut SyllableVars) {
             .filter(|&var| vars.reachable.insert(var.clone())) // skip already-visited variables
             .filter_map(|var| vars.vars.get(var)) // map name to rule and skip root variables
             .for_each(|rule| stack.push_back(rule))
-    }
-}
-
-/// If in delete mode and the pointer is over the passed response, draw a red overlay
-/// over the contents. Return true if the user clicks on the overlay, or otherwise false.
-fn handle_delete(mode: EditMode, ui: &mut Ui, response: &Response) -> bool {
-    if mode.is_delete() && response.hovered() {
-        ui.painter().rect_filled(response.rect.expand(2.0), 3.0, Color32::from_rgba_unmultiplied(255, 0, 0, 90));
-        ui.interact(response.rect, response.id, Sense::click()).clicked()
-    } else {
-        false
     }
 }
 

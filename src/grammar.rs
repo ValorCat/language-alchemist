@@ -4,7 +4,7 @@ use std::rc::Rc;
 use eframe::egui::{Color32, Frame, RichText, ScrollArea, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use crate::Language;
-use crate::util::EditMode;
+use crate::util::{EditMode, handle_delete_mode};
 
 /// A word in the input text.
 #[derive(Deserialize, Serialize)]
@@ -241,7 +241,7 @@ fn draw_rule(rule: &mut GrammarRule, ui: &mut Ui, mode: &EditMode) {
         }
         ui.label("->");
         if !rule.replace_patterns.is_empty() {
-            draw_replace_patterns(&rule.find_patterns, &mut rule.replace_patterns, ui, mode);
+            draw_replace_patterns(rule, ui, mode);
         } else if mode.is_edit() {
             draw_replace_node_selector(ui, mode, &rule.find_patterns, |new| rule.replace_patterns.push(new));
         } else {
@@ -270,89 +270,94 @@ fn draw_find_patterns(patterns: &mut Vec<FindPatternRef>, ui: &mut Ui, mode: &Ed
 }
 
 /// Render the "replace" portion of a rule.
-fn draw_replace_patterns(_find: &[FindPatternRef], replace: &mut Vec<ReplacePattern>, ui: &mut Ui, _mode: &EditMode) {
-    for pattern in replace {
-        ui.label(pattern.as_dbg_text());
+fn draw_replace_patterns(rule: &mut GrammarRule, ui: &mut Ui, mode: &EditMode) {
+    if !mode.is_edit() {
+        for node in &mut rule.replace_patterns {
+            draw_replace_node(node, ui, mode);
+        }
+    } else {
+        for i in 0..rule.replace_patterns.len() {
+            draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new| rule.replace_patterns.insert(i, new));
+            draw_replace_node(&mut rule.replace_patterns[i], ui, mode);
+        }
+        draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new: ReplacePattern| rule.replace_patterns.push(new));
     }
 }
 
 /// Render one element in a "find" pattern. Return true if any part of the node was changed.
 fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: &EditMode) -> bool {
     let text = RichText::new(&node.label).monospace();
-    match mode {
-        EditMode::View => {
-            let _ = ui.button(text);
-            false // nothing was changed
-        }
-        EditMode::Edit => {
-            let mut changed = false;
-            ui.menu_button(text, |ui| {
-                Frame::none().inner_margin(Vec2::splat(6.0)).show(ui, |ui| {
-                    match &mut node.pattern {
-                        PatternType::Phrase(ty) => {
-                            ui.label(ty.name());
-                        }
-                        PatternType::Word(ty) => {
-                            ui.label(ty.name());
-                        }
-                        PatternType::Literal(word) => {
-                            ui.horizontal(|ui| {
-                                ui.label("Exact Word: ");
-                                changed |= ui.text_edit_singleline(word).changed();
-                            });
-                        }
+    if !mode.is_edit() {
+        let node = ui.button(text);
+        handle_delete_mode(*mode, ui, &node)
+    } else {
+        let mut changed = false;
+        ui.menu_button(text, |ui| {
+            Frame::none().inner_margin(Vec2::splat(6.0)).show(ui, |ui| {
+                match &mut node.pattern {
+                    PatternType::Phrase(ty) => {
+                        ui.label(ty.name());
                     }
+                    PatternType::Word(ty) => {
+                        ui.label(ty.name());
+                    }
+                    PatternType::Literal(word) => {
+                        ui.horizontal(|ui| {
+                            ui.label("Exact Word: ");
+                            changed |= ui.text_edit_singleline(word).changed();
+                        });
+                    }
+                }
+                ui.separator();
+                changed |= ui.checkbox(&mut node.multimatch, "Group Matching")
+                    .on_hover_text("Capture all adjacent elements of this type")
+                    .changed();
+                changed |= ui.checkbox(&mut node.optional, "Optional Matching")
+                    .on_hover_text("Match this rule even if this element is not present")
+                    .changed();
+                if !matches!(node.pattern, PatternType::Literal(_)) {
                     ui.separator();
-                    changed |= ui.checkbox(&mut node.multimatch, "Group Matching")
-                        .on_hover_text("Capture all adjacent elements of this type")
-                        .changed();
-                    changed |= ui.checkbox(&mut node.optional, "Optional Matching")
-                        .on_hover_text("Match this rule even if this element is not present")
-                        .changed();
-                    if !matches!(node.pattern, PatternType::Literal(_)) {
-                        ui.separator();
-                        for child_node in &mut node.children {
-                            changed |= draw_find_node(&mut child_node.borrow_mut(), ui, mode);
-                        }
-                        changed |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
+                    for child_node in &mut node.children {
+                        changed |= draw_find_node(&mut child_node.borrow_mut(), ui, mode);
                     }
-                });
+                    changed |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
+                }
             });
-            changed
-        }
-        EditMode::Delete => todo!()
+        });
+        changed
     }
 }
 
+/// Render one element in a "replace" pattern.
+fn draw_replace_node(node: &mut ReplacePattern, ui: &mut Ui, _mode: &EditMode) {
+    let _ = ui.button(node.as_dbg_text());
+}
+
 /// Render the "find" pattern dropdown for a new rule. If an item is selected, the provided `on_select`
-/// function is called with a new `FindPattern` as the argument and then true is returned.
+/// function is called with a new `FindPatternRef` as the argument and then true is returned.
 fn draw_find_node_selector(ui: &mut Ui, mode: &EditMode, on_select: impl FnOnce(FindPatternRef)) -> bool {
-    match mode {
-        EditMode::View => {
-            ui.colored_label(Color32::RED, "(not set)");
-            false
-        }
-        EditMode::Edit => draw_find_pattern_menu(ui, "(click to set)", on_select),
-        EditMode::Delete => todo!()
+    if mode.is_edit() {
+        draw_find_pattern_menu(ui, "(click to set)", on_select)
+    } else {
+        ui.colored_label(Color32::RED, "(not set)");
+        false
     }
 }
 
 /// Render the "replace" pattern dropdown for a new rule. If an item is selected, the provided `on_select`
-/// function is called with a new `ReplacePattern` as the argument.
+/// function is called with a new `ReplacePatternR` as the argument.
 fn draw_replace_node_selector(ui: &mut Ui, mode: &EditMode, find_patterns: &[FindPatternRef],
     on_select: impl FnOnce(ReplacePattern))
 {
-    match mode {
-        EditMode::View => {
-            ui.colored_label(Color32::RED, "(not set)");
-        }
-        EditMode::Edit => draw_replace_pattern_menu(ui, "(click to set)", find_patterns, on_select),
-        EditMode::Delete => todo!()
+    if mode.is_edit() {
+        draw_replace_pattern_menu(ui, "(click to set)", find_patterns, on_select);
+    } else {
+        ui.colored_label(Color32::RED, "(not set)");
     }
 }
 
 /// Render a "find" pattern dropdown. If an item is selected, the provided `on_select` function is
-/// called with a new `FindPattern` as the argument and then true is returned.
+/// called with a new `FindPatternRef` as the argument and then true is returned.
 fn draw_find_pattern_menu(ui: &mut Ui, text: &str, action: impl FnOnce(FindPatternRef)) -> bool {
     let new_pattern = ui.menu_button(text,
         |ui| {
