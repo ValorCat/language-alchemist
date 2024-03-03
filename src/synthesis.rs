@@ -5,7 +5,7 @@ use rand::{distributions::WeightedIndex, prelude::*};
 use serde::{Deserialize, Serialize};
 use crate::Language;
 use crate::grapheme::{GraphemeInputField, Grapheme, MasterGraphemeStorage};
-use crate::util::{EditMode, NonEmptyList, handle_delete_mode};
+use crate::util::{draw_deletion_overlay, EditMode, NonEmptyList};
 
 /// A mapping of syllable rule variable names to their values.
 #[derive(Default, Deserialize, Serialize)]
@@ -322,22 +322,19 @@ fn draw_or_node(
         order: &mut usize, new_var: &mut Option<String>
 ) {
     // draw head node
-    if draw_and_node(&mut rule.head, ui, mode, graphemes, order, new_var) {
-        // user deleted this node
+    let should_delete = draw_and_node(&mut rule.head, ui, mode, graphemes, order, new_var);
+    if should_delete {
         rule.head.head = LeafRule::Uninitialized;
     }
 
-    for i in 0..rule.tail.len() {
+    // draw remaining nodes
+    rule.tail.retain_mut(|and_rule| {
         ui.heading("OR");
-        if draw_and_node(&mut rule.tail[i], ui, mode, graphemes, order, new_var) {
-            // user deleted this node
-            rule.tail.remove(i);
-            break; // avoid going out of bounds at end of loop
-        }
-    }
+        !draw_and_node(and_rule, ui, mode, graphemes, order, new_var)
+    });
 
     // draw button to insert new OR clause
-    if mode == EditMode::Edit && rule.head.head.initialized() {
+    if mode.is_edit() && rule.head.head.initialized() {
         ui.add_space(12.0);
         LeafRule::menu(ui, "OR...", |new_rule| rule.tail.push(AndRule::new(new_rule)));
     }
@@ -354,8 +351,8 @@ fn draw_and_node(
     }
 
     // draw first node
-    if draw_leaf_node(&mut rule.head, ui, mode, graphemes, order, new_var) {
-        // user deleted this node
+    let should_delete = draw_leaf_node(&mut rule.head, ui, mode, graphemes, order, new_var);
+    if should_delete {
         if rule.tail.is_empty() {
             return true; // this was the last node, so delete this whole AndRule
         }
@@ -363,17 +360,24 @@ fn draw_and_node(
     }
 
     // draw remaining nodes
-    // use indexed loop because we modify the list's length in the loop
-    for i in 0..rule.tail.len() {
-        if mode.is_edit() {
-            LeafRule::menu(ui, "+", |new_rule| rule.tail.insert(i, new_rule));
-        } else {
-            ui.label("+");
-        }
-        if draw_leaf_node(&mut rule.tail[i], ui, mode, graphemes, order, new_var) {
-            // user deleted this node
-            rule.tail.remove(i);
-            break; // avoid going out of bounds at end of loop
+    match mode {
+        EditMode::View =>{
+            for rule in &mut rule.tail {
+                ui.label("+");
+                draw_leaf_node(rule, ui, mode, graphemes, order, new_var);
+            }
+        },
+        EditMode::Edit => {
+            for i in 0..rule.tail.len() {
+                LeafRule::menu(ui, "+", |new_rule| rule.tail.insert(i, new_rule));
+                draw_leaf_node(&mut rule.tail[i], ui, mode, graphemes, order, new_var);
+            }
+        },
+        EditMode::Delete => {
+            rule.tail.retain_mut(|rule| {
+                ui.label("+");
+                !draw_leaf_node(rule, ui, mode, graphemes, order, new_var)
+            });
         }
     }
 
@@ -391,25 +395,24 @@ fn draw_leaf_node(
     order: &mut usize, new_var: &mut Option<String>
 ) -> bool {
     *order += 1; // increment for each leaf node visited
-    match rule {
+    let response = match rule {
         LeafRule::Uninitialized => {
             if mode.is_edit() {
                 LeafRule::menu(ui, "(click to set)", |new_rule| *rule = new_rule);
             } else {
                 ui.colored_label(Color32::RED, "(not set)");
             }
-            false // not deleteable
+            return false; // not deleteable
         }
         LeafRule::Sequence(string, input) => {
-            let response = ui.add(GraphemeInputField::new(string, input, *order)
+            ui.add(GraphemeInputField::new(string, input, *order)
                 .link(graphemes)
                 .small(true)
                 .allow_editing(mode.is_edit())
-                .interactable(!mode.is_delete()));
-            handle_delete_mode(mode, ui, &response)
+                .interactable(!mode.is_delete()))
         }
         LeafRule::Set(set, input) => {
-            let response = ui.scope(|ui| {
+            ui.scope(|ui| {
                 ui.label("{");
                 ui.add(GraphemeInputField::new(set, input, *order)
                     .link(graphemes)
@@ -417,8 +420,7 @@ fn draw_leaf_node(
                     .allow_editing(mode.is_edit())
                     .interactable(!mode.is_delete()));
                 ui.label("}");
-            }).response;
-            handle_delete_mode(mode, ui, &response)
+            }).response
         }
         LeafRule::Variable(input) => {
             if mode.is_edit() {
@@ -430,22 +432,21 @@ fn draw_leaf_node(
                     input.retain(|c| !c.is_whitespace());
                     *new_var = Some(input.clone());
                 }
-                false
+                response
             } else {
                 let text = if !input.is_empty() {
                     RichText::new(&*input).monospace()
                 } else {
                     RichText::new("(no variable given)").color(Color32::RED)
                 };
-                let response = ui.add(Label::new(text).sense(Sense::click()));
-                handle_delete_mode(mode, ui, &response)
+                ui.add(Label::new(text).sense(Sense::click()))
             }
         }
         LeafRule::Blank => {
-            let response = ui.add(Label::new("blank").sense(Sense::click()));
-            handle_delete_mode(mode, ui, &response)
+            ui.add(Label::new("blank").sense(Sense::click()))
         }
-    }
+    };
+    draw_deletion_overlay(mode, ui, &response)
 }
 
 /// Perform a DFS through the syllable rules, starting at each of the root variables.

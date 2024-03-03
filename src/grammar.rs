@@ -4,7 +4,7 @@ use std::rc::{Rc, Weak};
 use eframe::egui::{Color32, Frame, RichText, ScrollArea, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use crate::Language;
-use crate::util::{EditMode, handle_delete_mode};
+use crate::util::{draw_deletion_overlay, EditMode};
 
 /// A word in the input text.
 #[derive(Deserialize, Serialize)]
@@ -178,7 +178,7 @@ impl FindPattern {
 
 #[derive(Deserialize, Serialize)]
 pub enum ReplacePattern {
-	Capture(FindPatternWeakRef),
+	Capture(FindPatternWeakRef), // todo not being serialized, even with serde feature "rc"
 	Literal(String)
 }
 
@@ -195,7 +195,7 @@ impl ReplacePattern {
         match self {
             ReplacePattern::Capture(find_pattern) => match find_pattern.upgrade() {
                 Some(find_pattern) => find_pattern.borrow().short_label().to_owned(),
-                None => String::new(),
+                None => String::new()
             },
             ReplacePattern::Literal(literal) => format!("\"{literal}\"")
         }
@@ -249,7 +249,8 @@ fn draw_rule(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
         });
     } else {
         // we have a find pattern
-        if draw_find_patterns(&mut rule.find_patterns, ui, mode) {
+        let is_modified = draw_find_patterns(&mut rule.find_patterns, ui, mode);
+        if is_modified {
             recompute_pattern_labels(rule);
         }
         ui.label("->");
@@ -263,26 +264,31 @@ fn draw_rule(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
     }
 }
 
-/// Render the "find" portion of a grammar rule. Return true if any nodes were changed.
+/// Render the "find" portion of a grammar rule. Return true if any elements were modified or deleted.
 fn draw_find_patterns(patterns: &mut Vec<FindPatternRef>, ui: &mut Ui, mode: EditMode) -> bool {
-    let mut changed = false;
-    if mode.is_edit() {
-        for i in 0..patterns.len() {
-            changed |= draw_find_pattern_menu(ui, "+", |new| patterns.insert(i, new));
-            changed |= draw_find_node(&mut patterns[i].borrow_mut(), ui, mode).0;
-        }
-        changed |= draw_find_pattern_menu(ui, "+", |new| patterns.push(new));
-    } else {
-        for i in 0..patterns.len() {
-            let (node_changed, node_deleted) = draw_find_node(&mut patterns[i].borrow_mut(), ui, mode);
-            changed |= node_changed;
-            if node_deleted {
-                patterns.remove(i);
-                break;
+    let mut modified = false;
+    match mode {
+        EditMode::View => {
+            for pattern in patterns {
+                draw_find_node(&mut pattern.borrow_mut(), ui, mode);
             }
+        },
+        EditMode::Edit => {
+            for i in 0..patterns.len() {
+                modified |= draw_find_pattern_menu(ui, "+", |new| patterns.insert(i, new));
+                modified |= draw_find_node(&mut patterns[i].borrow_mut(), ui, mode);
+            }
+            modified |= draw_find_pattern_menu(ui, "+", |new| patterns.push(new));
+        },
+        EditMode::Delete => {
+            patterns.retain(|pattern| {
+                let child_modified = draw_find_node(&mut pattern.borrow_mut(), ui, mode);
+                modified |= child_modified;
+                !child_modified
+            });
         }
     }
-    changed
+    modified
 }
 
 /// Render the "replace" portion of a rule.
@@ -294,29 +300,21 @@ fn draw_replace_patterns(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
         }
         draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new: ReplacePattern| rule.replace_patterns.push(new));
     } else {
-        for i in 0..rule.replace_patterns.len() {
-            let mut should_delete = !rule.replace_patterns[i].is_valid();
-            if !should_delete {
-                should_delete = draw_replace_node(&mut rule.replace_patterns[i], ui, mode);
-            }
-            if should_delete {
-                rule.replace_patterns.remove(i);
-                break;
-            }
-        }
+        rule.replace_patterns.retain_mut(|pattern| {
+            let should_delete = draw_replace_node(pattern, ui, mode);
+            !should_delete && pattern.is_valid()
+        });
     }
 }
 
-/// Render one element in a "find" pattern. Return two booleans, the first indicating whether
-/// the node was changed and the second whether it was deleted.
-fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: EditMode) -> (bool, bool) {
+/// Render one element in a "find" pattern. Return true if the element was modified or deleted.
+fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: EditMode) -> bool {
     let text = RichText::new(&node.label).monospace();
     if !mode.is_edit() {
         let node = ui.button(text);
-        let deleted = handle_delete_mode(mode, ui, &node);
-        (deleted, deleted)
+        draw_deletion_overlay(mode, ui, &node)
     } else {
-        let mut changed = false;
+        let mut modified = false;
         ui.menu_button(text, |ui| {
             Frame::none().inner_margin(Vec2::splat(6.0)).show(ui, |ui| {
                 match &mut node.pattern {
@@ -329,34 +327,34 @@ fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: EditMode) -> (bool,
                     PatternType::Literal(word) => {
                         ui.horizontal(|ui| {
                             ui.label("Exact Word: ");
-                            changed |= ui.text_edit_singleline(word).changed();
+                            modified |= ui.text_edit_singleline(word).changed();
                         });
                     }
                 }
                 ui.separator();
-                changed |= ui.checkbox(&mut node.multimatch, "Group Matching")
+                modified |= ui.checkbox(&mut node.multimatch, "Group Matching")
                     .on_hover_text("Capture all adjacent elements of this type")
                     .changed();
-                changed |= ui.checkbox(&mut node.optional, "Optional Matching")
+                modified |= ui.checkbox(&mut node.optional, "Optional Matching")
                     .on_hover_text("Match this rule even if this element is not present")
                     .changed();
                 if !matches!(node.pattern, PatternType::Literal(_)) {
                     ui.separator();
                     for child_node in &mut node.children {
-                        changed |= draw_find_node(&mut child_node.borrow_mut(), ui, mode).0;
+                        modified |= draw_find_node(&mut child_node.borrow_mut(), ui, mode);
                     }
-                    changed |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
+                    modified |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
                 }
             });
         });
-        (changed, false)
+        modified
     }
 }
 
-/// Render one element in a "replace" pattern. Return true if the element is deleted.
+/// Render one element in a "replace" pattern. Return true if the element should be deleted.
 fn draw_replace_node(node: &mut ReplacePattern, ui: &mut Ui, mode: EditMode) -> bool {
     let node = ui.button(node.as_dbg_text());
-    handle_delete_mode(mode, ui, &node)
+    draw_deletion_overlay(mode, ui, &node)
 }
 
 /// Render the "find" pattern dropdown for a new rule. If an item is selected, the provided `on_select`
