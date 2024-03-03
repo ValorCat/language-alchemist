@@ -3,7 +3,7 @@ use eframe::egui;
 use egui::{Button, Context, Key, TextEdit, Ui};
 use egui::containers::ScrollArea;
 use serde::{Deserialize, Serialize};
-use crate::grammar::{GrammarRule, draw_grammar_tab};
+use crate::grammar::{GrammarRule, draw_grammar_tab, load_grammar_serde_metadata, save_grammar_serde_metadata};
 use crate::grapheme::MasterGraphemeStorage;
 use crate::lexicon::{LexiconSearchMode, Lexicon, LexiconEditWindow, draw_lexicon_tab};
 use crate::synthesis::{SyllableVars, draw_synthesis_tab, is_config_valid, synthesize_morpheme};
@@ -76,7 +76,11 @@ struct Application {
 impl Application {
     fn new(cc: &eframe::CreationContext) -> Self {
         if let Some(storage) = cc.storage {
-            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+            let mut loaded_app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            for language in &mut loaded_app.languages {
+                load_grammar_serde_metadata(&mut language.grammar_rules);
+            }
+            loaded_app
         } else {
             Default::default()
         }
@@ -103,6 +107,9 @@ impl eframe::App for Application {
     /// Called on exit to save any state not marked with `#[serde(skip)]`.
     /// Also automatically called every 30 seconds (as defined by `epi:App::auto_save_interval`).
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        for language in &mut self.languages {
+            save_grammar_serde_metadata(&mut language.grammar_rules);
+        }
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 

@@ -178,14 +178,17 @@ impl FindPattern {
 
 #[derive(Deserialize, Serialize)]
 pub enum ReplacePattern {
-	Capture(FindPatternWeakRef), // todo not being serialized, even with serde feature "rc"
+	Capture {
+        #[serde(skip)] capture: FindPatternWeakRef,
+        serde_label: String
+    },
 	Literal(String)
 }
 
 impl ReplacePattern {
     fn is_valid(&self) -> bool {
         match self {
-            ReplacePattern::Capture(find_pattern) => find_pattern.upgrade().is_some(),
+            ReplacePattern::Capture { capture: find_pattern, serde_label: _ } => find_pattern.upgrade().is_some(),
             ReplacePattern::Literal(_) => true
         }
     }
@@ -193,7 +196,7 @@ impl ReplacePattern {
     fn as_dbg_text(&self) -> String {
         // todo replace this with a proper button
         match self {
-            ReplacePattern::Capture(find_pattern) => match find_pattern.upgrade() {
+            ReplacePattern::Capture { capture, .. } => match capture.upgrade() {
                 Some(find_pattern) => find_pattern.borrow().short_label().to_owned(),
                 None => String::new()
             },
@@ -293,17 +296,25 @@ fn draw_find_patterns(patterns: &mut Vec<FindPatternRef>, ui: &mut Ui, mode: Edi
 
 /// Render the "replace" portion of a rule.
 fn draw_replace_patterns(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
-    if mode.is_edit() {
-        for i in 0..rule.replace_patterns.len() {
-            draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new| rule.replace_patterns.insert(i, new));
-            draw_replace_node(&mut rule.replace_patterns[i], ui, mode);
+    match mode {
+        EditMode::View => {
+            for pattern in &mut rule.replace_patterns {
+                draw_replace_node(pattern, ui, mode);
+            }
+        },
+        EditMode::Edit => {
+            for i in 0..rule.replace_patterns.len() {
+                draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new| rule.replace_patterns.insert(i, new));
+                draw_replace_node(&mut rule.replace_patterns[i], ui, mode);
+            }
+            draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new: ReplacePattern| rule.replace_patterns.push(new));
+        },
+        EditMode::Delete => {
+            rule.replace_patterns.retain_mut(|pattern| {
+                let should_delete = draw_replace_node(pattern, ui, mode);
+                !should_delete && pattern.is_valid()
+            });
         }
-        draw_replace_pattern_menu(ui, "+", &rule.find_patterns, |new: ReplacePattern| rule.replace_patterns.push(new));
-    } else {
-        rule.replace_patterns.retain_mut(|pattern| {
-            let should_delete = draw_replace_node(pattern, ui, mode);
-            !should_delete && pattern.is_valid()
-        });
     }
 }
 
@@ -424,7 +435,10 @@ fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &[FindPatternRef]
             for_each_in_subtree(choice, |node| {
                 if ui.button(node.borrow().short_label()).clicked() {
                     ui.close_menu();
-                    selected = Some(ReplacePattern::Capture(Rc::downgrade(node)));
+                    selected = Some(ReplacePattern::Capture {
+                        capture: Rc::downgrade(node),
+                        serde_label: String::new()
+                    });
                 }
             });
             if selected.is_some() {
@@ -466,5 +480,40 @@ fn recompute_pattern_labels(rule: &mut GrammarRule) {
     }
     for node in &mut rule.find_patterns {
         node.borrow_mut().compute_label(&mut counter);
+    }
+}
+
+/// Because `ReplacePattern::Capture` contains a `Weak` reference to the captured `FindPattern`,
+/// it can't be serialized directly. So we also serialize the `FindPattern`'s current label, and
+/// during deserialization we use the label to associate with the correct `FindPattern`.
+pub fn save_grammar_serde_metadata(rules: &mut Vec<GrammarRule>) {
+    for rule in rules {
+        for replace_pattern in &mut rule.replace_patterns {
+            if let ReplacePattern::Capture { capture, serde_label } = replace_pattern {
+                *serde_label = capture.upgrade()
+                    .map(|find_pattern| find_pattern.borrow().short_label().to_owned())
+                    .unwrap_or_default();
+            }
+        }
+    }
+}
+
+/// See `save_grammar_serde_metadata()` for why this function exists.
+pub fn load_grammar_serde_metadata(rules: &mut Vec<GrammarRule>) {
+    for rule in rules {
+        // map this rule's labels to their corresponding find patterns
+        let find_pattern_labels: HashMap<String, FindPatternRef> = rule.find_patterns.iter()
+            .map(|find_pattern| (find_pattern.borrow().short_label().to_owned(), Rc::clone(find_pattern)))
+            .collect();
+
+        // look up each replace pattern's deserialized label to get a reference to the captured find pattern
+        for replace_pattern in &mut rule.replace_patterns {
+            if let ReplacePattern::Capture { capture, serde_label } = replace_pattern {
+                match find_pattern_labels.get(serde_label) {
+                    Some(find_pattern) => *capture = Rc::downgrade(find_pattern),
+                    None => *capture = Weak::new()
+                }
+            }
+        }
     }
 }
