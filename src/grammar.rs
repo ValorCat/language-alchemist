@@ -101,8 +101,7 @@ pub struct FindPattern {
 	multimatch: bool,           // also match all adjacent constituents of same type
 	optional: bool,             // also match even if not present
 	children: Vec<FindPatternRef>,
-    label: String,
-    short_label_len: usize      // label size before any nested labels
+    label: String
 }
 
 // A reference-counted FindPattern.
@@ -116,17 +115,12 @@ type FindPatternId = (PatternType, bool, bool);
 
 impl FindPattern {
     fn new(pattern: PatternType) -> Self {
-        Self { pattern, multimatch: false, optional: false, children: vec![], label: String::new(), short_label_len: 0 }
+        Self { pattern, multimatch: false, optional: false, children: vec![], label: String::new() }
     }
 
     /// Get the unique portion of this pattern.
     fn id(&self) -> FindPatternId {
         (self.pattern.clone(), self.multimatch, self.optional)
-    }
-
-    /// Get the "short" version of the label, without any sub-patterns.
-    fn short_label(&self) -> &str {
-        &self.label[..self.short_label_len]
     }
 
     /// Compute and save this node's label. It can be accessed later through the `self.label` field.
@@ -161,17 +155,9 @@ impl FindPattern {
             }
         }
 
-        // short label ends here
-        self.short_label_len = self.label.len();
-
-        // add nested patterns in braces
-        if !self.children.is_empty() {
-            self.label.push_str(" { ");
-            for sub_pattern in &self.children {
-                sub_pattern.borrow_mut().compute_label(counter);
-                self.label.push_str(&sub_pattern.borrow().label);
-            }
-            self.label.push_str(" }");
+        // recursively recompute labels of all children
+        for sub_pattern in &self.children {
+            sub_pattern.borrow_mut().compute_label(counter);
         }
     }
 }
@@ -196,10 +182,9 @@ impl ReplacePattern {
     fn as_dbg_text(&self) -> String {
         // todo replace this with a proper button
         match self {
-            ReplacePattern::Capture { capture, .. } => match capture.upgrade() {
-                Some(find_pattern) => find_pattern.borrow().short_label().to_owned(),
-                None => String::new()
-            },
+            ReplacePattern::Capture { capture, .. } => capture.upgrade()
+                .map(|find_pattern| find_pattern.borrow().label.clone())
+                .unwrap_or_default(),
             ReplacePattern::Literal(literal) => format!("\"{literal}\"")
         }
     }
@@ -252,8 +237,9 @@ fn draw_rule(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
         });
     } else {
         // we have a find pattern
-        let is_modified = draw_find_patterns(&mut rule.find_patterns, ui, mode);
-        if is_modified {
+        let mut was_modified = false;
+        draw_find_patterns(&mut rule.find_patterns, &mut was_modified, ui, mode);
+        if was_modified {
             recompute_pattern_labels(rule);
         }
         ui.label("->");
@@ -267,31 +253,29 @@ fn draw_rule(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
     }
 }
 
-/// Render the "find" portion of a grammar rule. Return true if any elements were modified or deleted.
-fn draw_find_patterns(patterns: &mut Vec<FindPatternRef>, ui: &mut Ui, mode: EditMode) -> bool {
-    let mut modified = false;
+/// Render the "find" portion of a grammar rule.
+fn draw_find_patterns(patterns: &mut Vec<FindPatternRef>, rule_modified: &mut bool, ui: &mut Ui, mode: EditMode) {
     match mode {
         EditMode::View => {
             for pattern in patterns {
-                draw_find_node(&mut pattern.borrow_mut(), ui, mode);
+                draw_find_node(&mut pattern.borrow_mut(), rule_modified, ui, mode);
             }
         },
         EditMode::Edit => {
             for i in 0..patterns.len() {
-                modified |= draw_find_pattern_menu(ui, "+", |new| patterns.insert(i, new));
-                modified |= draw_find_node(&mut patterns[i].borrow_mut(), ui, mode);
+                *rule_modified |= draw_find_pattern_menu(ui, "+", |new| patterns.insert(i, new));
+                draw_find_node(&mut patterns[i].borrow_mut(), rule_modified, ui, mode);
             }
-            modified |= draw_find_pattern_menu(ui, "+", |new| patterns.push(new));
+            *rule_modified |= draw_find_pattern_menu(ui, "+", |new| patterns.push(new));
         },
         EditMode::Delete => {
             patterns.retain(|pattern| {
-                let child_modified = draw_find_node(&mut pattern.borrow_mut(), ui, mode);
-                modified |= child_modified;
+                let child_modified = draw_find_node(&mut pattern.borrow_mut(), rule_modified, ui, mode);
+                *rule_modified |= child_modified;
                 !child_modified
             });
         }
     }
-    modified
 }
 
 /// Render the "replace" portion of a rule.
@@ -318,48 +302,54 @@ fn draw_replace_patterns(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
     }
 }
 
-/// Render one element in a "find" pattern. Return true if the element was modified or deleted.
-fn draw_find_node(node: &mut FindPattern, ui: &mut Ui, mode: EditMode) -> bool {
+/// Render one element in a "find" pattern. Return true if the element should be deleted.
+fn draw_find_node(node: &mut FindPattern, rule_modified: &mut bool, ui: &mut Ui, mode: EditMode) -> bool {
     let text = RichText::new(&node.label).monospace();
-    if !mode.is_edit() {
-        let node = ui.button(text);
-        draw_deletion_overlay(mode, ui, &node)
-    } else {
-        let mut modified = false;
-        ui.menu_button(text, |ui| {
-            Frame::none().inner_margin(Vec2::splat(6.0)).show(ui, |ui| {
-                match &mut node.pattern {
-                    PatternType::Phrase(ty) => {
-                        ui.label(ty.name());
-                    }
-                    PatternType::Word(ty) => {
-                        ui.label(ty.name());
-                    }
-                    PatternType::Literal(word) => {
-                        ui.horizontal(|ui| {
-                            ui.label("Exact Word: ");
-                            modified |= ui.text_edit_singleline(word).changed();
-                        });
-                    }
-                }
-                ui.separator();
-                modified |= ui.checkbox(&mut node.multimatch, "Group Matching")
-                    .on_hover_text("Capture all adjacent elements of this type")
-                    .changed();
-                modified |= ui.checkbox(&mut node.optional, "Optional Matching")
-                    .on_hover_text("Match this rule even if this element is not present")
-                    .changed();
-                if !matches!(node.pattern, PatternType::Literal(_)) {
+    match mode {
+        EditMode::View => {
+            let _ = ui.button(text);
+        },
+        EditMode::Edit => {
+            ui.menu_button(text, |ui| {
+                Frame::none().inner_margin(Vec2::splat(6.0)).show(ui, |ui| {
+                    match &mut node.pattern {
+                        PatternType::Phrase(ty) => ui.label(ty.name()),
+                        PatternType::Word(ty) => ui.label(ty.name()),
+                        PatternType::Literal(word) => {
+                            ui.horizontal(|ui| {
+                                ui.label("Exact Word: ");
+                                *rule_modified |= ui.text_edit_singleline(word).changed();
+                            }).response
+                        }
+                    };
                     ui.separator();
-                    for child_node in &mut node.children {
-                        modified |= draw_find_node(&mut child_node.borrow_mut(), ui, mode);
+                    *rule_modified |= ui.checkbox(&mut node.multimatch, "Group Matching")
+                        .on_hover_text("Capture all adjacent elements of this type")
+                        .changed();
+                    *rule_modified |= ui.checkbox(&mut node.optional, "Optional Matching")
+                        .on_hover_text("Match this rule even if this element is not present")
+                        .changed();
+                    if !matches!(node.pattern, PatternType::Literal(_)) {
+                        ui.separator();
+                        *rule_modified |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
                     }
-                    modified |= draw_find_pattern_menu(ui, "Add Deep Match...", |new| node.children.push(new));
-                }
+                });
             });
-        });
-        modified
+        },
+        EditMode::Delete => {
+            let node = ui.button(text);
+            if draw_deletion_overlay(mode, ui, &node) {
+                *rule_modified = true;
+                return true;
+            }
+        }
     }
+    if !node.children.is_empty() {
+        ui.label("{");
+        draw_find_patterns(&mut node.children, rule_modified, ui, mode);
+        ui.label("}");
+    }
+    false
 }
 
 /// Render one element in a "replace" pattern. Return true if the element should be deleted.
@@ -433,7 +423,7 @@ fn draw_replace_pattern_menu(ui: &mut Ui, text: &str, choices: &[FindPatternRef]
         for choice in choices {
             let mut selected = None;
             for_each_in_subtree(choice, |node| {
-                if ui.button(node.borrow().short_label()).clicked() {
+                if ui.button(&node.borrow().label).clicked() {
                     ui.close_menu();
                     selected = Some(ReplacePattern::Capture {
                         capture: Rc::downgrade(node),
@@ -491,7 +481,7 @@ pub fn save_grammar_serde_metadata(rules: &mut Vec<GrammarRule>) {
         for replace_pattern in &mut rule.replace_patterns {
             if let ReplacePattern::Capture { capture, serde_label } = replace_pattern {
                 *serde_label = capture.upgrade()
-                    .map(|find_pattern| find_pattern.borrow().short_label().to_owned())
+                    .map(|find_pattern| find_pattern.borrow().label.clone())
                     .unwrap_or_default();
             }
         }
@@ -503,7 +493,7 @@ pub fn load_grammar_serde_metadata(rules: &mut Vec<GrammarRule>) {
     for rule in rules {
         // map this rule's labels to their corresponding find patterns
         let find_pattern_labels: HashMap<String, FindPatternRef> = rule.find_patterns.iter()
-            .map(|find_pattern| (find_pattern.borrow().short_label().to_owned(), Rc::clone(find_pattern)))
+            .map(|find_pattern| (find_pattern.borrow().label.clone(), Rc::clone(find_pattern)))
             .collect();
 
         // look up each replace pattern's deserialized label to get a reference to the captured find pattern
