@@ -1,10 +1,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
-use eframe::egui::{Color32, Frame, RichText, ScrollArea, Ui, Vec2};
+use eframe::egui::{Color32, Frame, Id, Label, Rect, Response, RichText, ScrollArea, Sense, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use crate::Language;
-use crate::util::{draw_deletion_overlay, EditMode};
+use crate::util::{draw_deletion_overlay, draw_reorder_drop_area, draw_reorderable, EditMode};
 
 /// A word in the input text.
 #[derive(Deserialize, Serialize)]
@@ -207,18 +207,34 @@ pub fn draw_grammar_tab(ui: &mut Ui, curr_lang: &mut Language) {
         let mode = curr_lang.grammar_edit_mode;
         ui.add_space(5.0);
         ui.group(|ui| {
+            ui.spacing_mut().item_spacing.y += 3.0;
+            ui.add_space(ui.spacing().item_spacing.y); // match the extra space at the bottom
             ui.set_width(ui.available_width());
-            for (i, rule) in curr_lang.grammar_rules.iter_mut().enumerate() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(format!("{}.", i + 1));
-                    draw_rule(rule, ui, mode);
-                });
+
+            let mut moved_rule = None;
+            for (index, rule) in curr_lang.grammar_rules.iter_mut().enumerate() {
+                let rule_id = Id::new(format!("rule {index}"));
+                let should_delete = draw_reorderable(mode, ui, rule_id, index, &mut moved_rule, |ui| draw_rule(rule, index, ui, mode));
+                if should_delete {
+                    curr_lang.grammar_rules.remove(index);
+                    break;
+                }
                 ui.add_space(3.0);
             }
+            
             if mode.is_edit() {
                 if !curr_lang.grammar_rules.is_empty() {
-                    ui.add_space(7.0);
+                    // draw space before 'add rule' button, which doubles as the drop zone for dragging a rule to the end
+                    // we can't just call ui.add_space() because we need to check the space for hovers
+                    let response = ui.allocate_rect(Rect::from_min_size(ui.cursor().left_top(), Vec2::new(ui.available_width(), 10.0)), Sense::hover());
+                    draw_reorder_drop_area(ui, curr_lang.grammar_rules.len(), &mut moved_rule, &response);
+
+                    // if any rules were dragged and released, move them now
+                    if let Some(reordering) = moved_rule {
+                        reordering.apply(&mut curr_lang.grammar_rules)
+                    }
                 }
+
                 if ui.button("Add Rule").clicked() {
                     curr_lang.grammar_rules.push(Default::default());
                 }
@@ -227,30 +243,44 @@ pub fn draw_grammar_tab(ui: &mut Ui, curr_lang: &mut Language) {
     });
 }
 
-/// Render the find and replace patterns for a grammar rule.
-fn draw_rule(rule: &mut GrammarRule, ui: &mut Ui, mode: EditMode) {
-    if rule.find_patterns.is_empty() {
-        // no find pattern has been set yet
-        draw_find_node_selector(ui, mode, |new| {
-            rule.find_patterns.push(new);
-            recompute_pattern_labels(rule);
-        });
-    } else {
-        // we have a find pattern
-        let mut was_modified = false;
-        draw_find_patterns(&mut rule.find_patterns, &mut was_modified, ui, mode);
-        if was_modified {
-            recompute_pattern_labels(rule);
-        }
-        ui.label("->");
-        if !rule.replace_patterns.is_empty() {
-            draw_replace_patterns(rule, ui, mode);
-        } else if mode.is_edit() {
-            draw_replace_node_selector(ui, mode, &rule.find_patterns, |new| rule.replace_patterns.push(new));
+/// Render the find and replace patterns for a grammar rule. Return the entire rule's Response, as well
+/// as just the number label's Response (used for drag detection).
+fn draw_rule(rule: &mut GrammarRule, index: usize, ui: &mut Ui, mode: EditMode) -> (Response, Response) {
+    let response = ui.horizontal_wrapped(|ui| {
+        let label_sense = match mode {
+            EditMode::View => Sense::hover(),
+            EditMode::Edit => Sense::drag(),
+            EditMode::Delete => Sense::click()
+        };
+        let number_label = Label::new(format!("{}.", index + 1))
+            .selectable(mode.is_view())
+            .sense(label_sense);
+        let label_response = ui.add(number_label);
+        if rule.find_patterns.is_empty() {
+            // no find pattern has been set yet
+            draw_find_node_selector(ui, mode, |new| {
+                rule.find_patterns.push(new);
+                recompute_pattern_labels(rule);
+            });
         } else {
-            ui.colored_label(Color32::RED, "(not set)");
+            // we have a find pattern
+            let mut was_modified = false;
+            draw_find_patterns(&mut rule.find_patterns, &mut was_modified, ui, mode);
+            if was_modified {
+                recompute_pattern_labels(rule);
+            }
+            ui.label("->");
+            if !rule.replace_patterns.is_empty() {
+                draw_replace_patterns(rule, ui, mode);
+            } else if mode.is_edit() {
+                draw_replace_node_selector(ui, mode, &rule.find_patterns, |new| rule.replace_patterns.push(new));
+            } else {
+                ui.colored_label(Color32::RED, "(not set)");
+            }
         }
-    }
+        label_response
+    });
+    (response.response, response.inner)
 }
 
 /// Render the "find" portion of a grammar rule.
@@ -270,9 +300,9 @@ fn draw_find_patterns(patterns: &mut Vec<FindPatternRef>, rule_modified: &mut bo
         },
         EditMode::Delete => {
             patterns.retain(|pattern| {
-                let child_modified = draw_find_node(&mut pattern.borrow_mut(), rule_modified, ui, mode);
-                *rule_modified |= child_modified;
-                !child_modified
+                let should_delete = draw_find_node(&mut pattern.borrow_mut(), rule_modified, ui, mode);
+                *rule_modified |= should_delete;
+                !should_delete
             });
         }
     }
@@ -354,7 +384,8 @@ fn draw_find_node(node: &mut FindPattern, rule_modified: &mut bool, ui: &mut Ui,
 
 /// Render one element in a "replace" pattern. Return true if the element should be deleted.
 fn draw_replace_node(node: &mut ReplacePattern, ui: &mut Ui, mode: EditMode) -> bool {
-    let node = ui.button(node.as_dbg_text());
+    let text = RichText::new(node.as_dbg_text()).monospace();
+    let node = ui.button(text);
     draw_deletion_overlay(mode, ui, &node)
 }
 

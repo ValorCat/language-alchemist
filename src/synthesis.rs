@@ -439,11 +439,11 @@ fn draw_leaf_node(
                 } else {
                     RichText::new("(no variable given)").color(Color32::RED)
                 };
-                ui.add(Label::new(text).sense(Sense::click()))
+                ui.add(Label::new(text).selectable(mode.is_view()).sense(Sense::click()))
             }
         }
         LeafRule::Blank => {
-            ui.add(Label::new("blank").sense(Sense::click()))
+            ui.add(Label::new("blank").selectable(mode.is_view()).sense(Sense::click()))
         }
     };
     draw_deletion_overlay(mode, ui, &response)
